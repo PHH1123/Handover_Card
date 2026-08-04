@@ -3,6 +3,7 @@ package com.handovercard.card;
 import tools.jackson.databind.ObjectMapper;
 import com.handovercard.card.dto.HandoverCardUploadRequest;
 import com.handovercard.common.ResourceNotFoundException;
+import com.handovercard.member.Member;
 import com.handovercard.storage.AudioStorageService;
 import com.handovercard.storage.StoredAudio;
 import com.handovercard.summarization.SummaryResult;
@@ -26,8 +27,9 @@ public class HandoverCardService {
     }
 
     @Transactional
-    public HandoverCard createAndPersist(HandoverCardUploadRequest request) {
+    public HandoverCard createAndPersist(HandoverCardUploadRequest request, Member owner) {
         HandoverCard card = new HandoverCard(
+                owner,
                 request.getSenderName(),
                 request.getReceiverName(),
                 request.getSourceLanguage(),
@@ -49,6 +51,16 @@ public class HandoverCardService {
     public HandoverCard get(Long id) {
         return repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Handover card not found: " + id));
+    }
+
+    @Transactional(readOnly = true)
+    public HandoverCard getOwned(Long id, Member requester) {
+        HandoverCard card = get(id);
+        if (!card.getOwner().getId().equals(requester.getId())) {
+            // 404, not 403 — avoids confirming to other users that this card ID exists
+            throw new ResourceNotFoundException("Handover card not found: " + id);
+        }
+        return card;
     }
 
     @Transactional

@@ -4,10 +4,12 @@ import com.handovercard.card.dto.HandoverCardCreatedResponse;
 import com.handovercard.card.dto.HandoverCardResponse;
 import com.handovercard.card.dto.HandoverCardUploadRequest;
 import com.handovercard.pipeline.HandoverProcessingPipeline;
+import com.handovercard.security.CustomUserDetails;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,8 +35,9 @@ public class HandoverCardController {
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<HandoverCardCreatedResponse> create(@Valid @ModelAttribute HandoverCardUploadRequest request) {
-        HandoverCard card = handoverCardService.createAndPersist(request);
+    public ResponseEntity<HandoverCardCreatedResponse> create(@Valid @ModelAttribute HandoverCardUploadRequest request,
+                                                                @AuthenticationPrincipal CustomUserDetails principal) {
+        HandoverCard card = handoverCardService.createAndPersist(request, principal.getMember());
         processingPipeline.processAsync(card.getId());
 
         HandoverCardCreatedResponse body = new HandoverCardCreatedResponse(card.getId(), card.getStatus());
@@ -44,8 +47,8 @@ public class HandoverCardController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<HandoverCardResponse> get(@PathVariable Long id) {
-        HandoverCard card = handoverCardService.get(id);
+    public ResponseEntity<HandoverCardResponse> get(@PathVariable Long id, @AuthenticationPrincipal CustomUserDetails principal) {
+        HandoverCard card = handoverCardService.getOwned(id, principal.getMember());
         return ResponseEntity.ok(handoverCardMapper.toResponse(card));
     }
 }
