@@ -9,4 +9,6 @@ public interface AudioStorageService {
     StoredAudio store(MultipartFile file, Long cardId);
 
     Path resolve(String relativePath);
+
+    void delete(String relativePath);
 }

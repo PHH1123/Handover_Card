@@ -63,6 +63,18 @@ public class LocalFileSystemAudioStorageService implements AudioStorageService {
         return baseDir.resolve(relativePath).normalize();
     }
 
+    @Override
+    public void delete(String relativePath) {
+        if (relativePath == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(resolve(relativePath));
+        } catch (IOException e) {
+            throw new StorageException("Failed to delete audio file: " + relativePath, e);
+        }
+    }
+
     private String extractExtension(String originalFilename) {
         if (originalFilename == null || !originalFilename.contains(".")) {
             throw new StorageException("Audio file must have an extension");

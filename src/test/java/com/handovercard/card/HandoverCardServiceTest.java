@@ -7,6 +7,10 @@ import com.handovercard.member.MemberRole;
 import com.handovercard.storage.AudioStorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import tools.jackson.databind.ObjectMapper;
 
 import java.lang.reflect.Field;
@@ -16,19 +20,22 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class HandoverCardServiceTest {
 
     private HandoverCardRepository repository;
     private MemberRepository memberRepository;
+    private AudioStorageService audioStorageService;
     private HandoverCardService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(HandoverCardRepository.class);
         memberRepository = mock(MemberRepository.class);
-        AudioStorageService audioStorageService = mock(AudioStorageService.class);
+        audioStorageService = mock(AudioStorageService.class);
         service = new HandoverCardService(repository, memberRepository, audioStorageService, new ObjectMapper());
     }
 
@@ -102,10 +109,86 @@ class HandoverCardServiceTest {
     void listAccessibleDelegatesToRepositoryQuery() {
         Member requester = member(1L, "owner@example.com");
         HandoverCard card = card(10L, requester);
-        when(repository.findAllAccessibleTo(requester)).thenReturn(List.of(card));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(repository.findAllAccessibleTo(requester, pageable)).thenReturn(new PageImpl<>(List.of(card)));
 
-        List<HandoverCard> result = service.listAccessible(requester);
+        Page<HandoverCard> result = service.listAccessible(requester, pageable);
 
-        assertThat(result).containsExactly(card);
+        assertThat(result.getContent()).containsExactly(card);
+    }
+
+    @Test
+    void deleteRemovesCardAndAudioFileWhenRequesterIsOwner() {
+        Member owner = member(1L, "owner@example.com");
+        HandoverCard card = card(10L, owner);
+        card.setAudioFilePath("10_abc.wav");
+        when(repository.findById(10L)).thenReturn(Optional.of(card));
+
+        service.delete(10L, owner);
+
+        verify(audioStorageService).delete("10_abc.wav");
+        verify(repository).delete(card);
+    }
+
+    @Test
+    void deleteThrowsNotFoundWhenRequesterIsNotOwner() {
+        Member owner = member(1L, "owner@example.com");
+        Member stranger = member(2L, "stranger@example.com");
+        HandoverCard card = card(10L, owner);
+        when(repository.findById(10L)).thenReturn(Optional.of(card));
+
+        assertThatThrownBy(() -> service.delete(10L, stranger))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(repository, never()).delete(card);
+    }
+
+    @Test
+    void deleteThrowsNotFoundWhenRequesterIsOnlyTheReceiver() {
+        Member owner = member(1L, "owner@example.com");
+        Member receiver = member(2L, "receiver@example.com");
+        HandoverCard card = card(10L, owner);
+        card.setReceiver(receiver);
+        when(repository.findById(10L)).thenReturn(Optional.of(card));
+
+        assertThatThrownBy(() -> service.delete(10L, receiver))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(repository, never()).delete(card);
+    }
+
+    @Test
+    void reprocessResetsFailedCardToReceived() {
+        Member owner = member(1L, "owner@example.com");
+        HandoverCard card = card(10L, owner);
+        card.setStatus(HandoverStatus.FAILED);
+        card.setErrorMessage("boom");
+        when(repository.findById(10L)).thenReturn(Optional.of(card));
+
+        HandoverCard result = service.reprocess(10L, owner);
+
+        assertThat(result.getStatus()).isEqualTo(HandoverStatus.RECEIVED);
+        assertThat(result.getErrorMessage()).isNull();
+    }
+
+    @Test
+    void reprocessThrowsInvalidStateWhenCardIsNotFailed() {
+        Member owner = member(1L, "owner@example.com");
+        HandoverCard card = card(10L, owner);
+        card.setStatus(HandoverStatus.COMPLETED);
+        when(repository.findById(10L)).thenReturn(Optional.of(card));
+
+        assertThatThrownBy(() -> service.reprocess(10L, owner))
+                .isInstanceOf(InvalidCardStateException.class);
+    }
+
+    @Test
+    void reprocessThrowsNotFoundWhenRequesterIsNotOwner() {
+        Member owner = member(1L, "owner@example.com");
+        Member stranger = member(2L, "stranger@example.com");
+        HandoverCard card = card(10L, owner);
+        card.setStatus(HandoverStatus.FAILED);
+        when(repository.findById(10L)).thenReturn(Optional.of(card));
+
+        assertThatThrownBy(() -> service.reprocess(10L, stranger))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }

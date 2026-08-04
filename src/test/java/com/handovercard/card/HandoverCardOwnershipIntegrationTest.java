@@ -18,9 +18,11 @@ import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -33,6 +35,9 @@ class HandoverCardOwnershipIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private HandoverCardRepository handoverCardRepository;
 
     private record Session(String email, String accessToken) {
     }
@@ -136,17 +141,47 @@ class HandoverCardOwnershipIntegrationTest {
                         .header("Authorization", "Bearer " + owner.accessToken()))
                 .andExpect(status().isOk())
                 .andReturn();
-        JsonNode ownerCards = objectMapper.readTree(ownerResult.getResponse().getContentAsString());
-        assertThat(ownerCards.size()).isEqualTo(2);
+        JsonNode ownerBody = objectMapper.readTree(ownerResult.getResponse().getContentAsString());
+        assertThat(ownerBody.get("content").size()).isEqualTo(2);
+        assertThat(ownerBody.get("totalElements").asLong()).isEqualTo(2);
 
         MvcResult receiverResult = mockMvc.perform(get("/api/handover-cards")
                         .header("Authorization", "Bearer " + receiver.accessToken()))
                 .andExpect(status().isOk())
                 .andReturn();
-        JsonNode receiverCards = objectMapper.readTree(receiverResult.getResponse().getContentAsString());
+        JsonNode receiverBody = objectMapper.readTree(receiverResult.getResponse().getContentAsString());
+        JsonNode receiverCards = receiverBody.get("content");
         assertThat(receiverCards.size()).isEqualTo(1);
         assertThat(receiverCards.get(0).get("id").asLong()).isEqualTo(receivedCardId);
         assertThat(ownedCardId).isNotNull();
+    }
+
+    @Test
+    void listRespectsPageAndSizeParameters() throws Exception {
+        Session owner = signupAndLogin("page-owner");
+        createCard(owner.accessToken(), null);
+        createCard(owner.accessToken(), null);
+        createCard(owner.accessToken(), null);
+
+        mockMvc.perform(get("/api/handover-cards")
+                        .param("page", "0")
+                        .param("size", "2")
+                        .header("Authorization", "Bearer " + owner.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(2))
+                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.hasNext").value(true));
+
+        mockMvc.perform(get("/api/handover-cards")
+                        .param("page", "1")
+                        .param("size", "2")
+                        .header("Authorization", "Bearer " + owner.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.hasNext").value(false));
     }
 
     @Test
@@ -166,5 +201,84 @@ class HandoverCardOwnershipIntegrationTest {
     void listingCardsWithoutAuthenticationIsRejected() throws Exception {
         mockMvc.perform(get("/api/handover-cards"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void ownerCanDeleteTheirOwnCard() throws Exception {
+        Session owner = signupAndLogin("delete-owner");
+        Long cardId = createCard(owner.accessToken(), null);
+
+        mockMvc.perform(delete("/api/handover-cards/" + cardId)
+                        .header("Authorization", "Bearer " + owner.accessToken()))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/handover-cards/" + cardId)
+                        .header("Authorization", "Bearer " + owner.accessToken()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void nonOwnerCannotDeleteSomeoneElsesCard() throws Exception {
+        Session owner = signupAndLogin("delete-owner2");
+        Session receiver = signupAndLogin("delete-receiver");
+        Long cardId = createCard(owner.accessToken(), receiver.email());
+
+        mockMvc.perform(delete("/api/handover-cards/" + cardId)
+                        .header("Authorization", "Bearer " + receiver.accessToken()))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/api/handover-cards/" + cardId)
+                        .header("Authorization", "Bearer " + owner.accessToken()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void deletingWithoutAuthenticationIsRejected() throws Exception {
+        Session owner = signupAndLogin("delete-owner3");
+        Long cardId = createCard(owner.accessToken(), null);
+
+        mockMvc.perform(delete("/api/handover-cards/" + cardId))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void ownerCanReprocessAFailedCard() throws Exception {
+        Session owner = signupAndLogin("reprocess-owner");
+        Long cardId = createCard(owner.accessToken(), null);
+        forceStatus(cardId, HandoverStatus.FAILED);
+
+        mockMvc.perform(post("/api/handover-cards/" + cardId + "/reprocess")
+                        .header("Authorization", "Bearer " + owner.accessToken()))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("RECEIVED"));
+    }
+
+    @Test
+    void reprocessingANonFailedCardIsRejected() throws Exception {
+        Session owner = signupAndLogin("reprocess-owner2");
+        Long cardId = createCard(owner.accessToken(), null);
+        forceStatus(cardId, HandoverStatus.COMPLETED);
+
+        mockMvc.perform(post("/api/handover-cards/" + cardId + "/reprocess")
+                        .header("Authorization", "Bearer " + owner.accessToken()))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void nonOwnerCannotReprocessSomeoneElsesCard() throws Exception {
+        Session owner = signupAndLogin("reprocess-owner3");
+        Session stranger = signupAndLogin("reprocess-stranger");
+        Long cardId = createCard(owner.accessToken(), null);
+        forceStatus(cardId, HandoverStatus.FAILED);
+
+        mockMvc.perform(post("/api/handover-cards/" + cardId + "/reprocess")
+                        .header("Authorization", "Bearer " + stranger.accessToken()))
+                .andExpect(status().isNotFound());
+    }
+
+    private void forceStatus(Long cardId, HandoverStatus status) {
+        HandoverCard card = handoverCardRepository.findById(cardId).orElseThrow();
+        card.setStatus(status);
+        handoverCardRepository.save(card);
     }
 }

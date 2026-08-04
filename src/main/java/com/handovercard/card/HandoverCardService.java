@@ -8,11 +8,11 @@ import com.handovercard.member.MemberRepository;
 import com.handovercard.storage.AudioStorageService;
 import com.handovercard.storage.StoredAudio;
 import com.handovercard.summarization.SummaryResult;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-
-import java.util.List;
 
 @Service
 public class HandoverCardService {
@@ -73,8 +73,8 @@ public class HandoverCardService {
     }
 
     @Transactional(readOnly = true)
-    public List<HandoverCard> listAccessible(Member requester) {
-        return repository.findAllAccessibleTo(requester);
+    public Page<HandoverCard> listAccessible(Member requester, Pageable pageable) {
+        return repository.findAllAccessibleTo(requester, pageable);
     }
 
     private boolean isAccessibleTo(HandoverCard card, Member requester) {
@@ -82,6 +82,36 @@ public class HandoverCardService {
             return true;
         }
         return card.getReceiver() != null && card.getReceiver().getId().equals(requester.getId());
+    }
+
+    @Transactional
+    public void delete(Long id, Member requester) {
+        HandoverCard card = getOwned(id, requester);
+        audioStorageService.delete(card.getAudioFilePath());
+        repository.delete(card);
+    }
+
+    @Transactional
+    public HandoverCard reprocess(Long id, Member requester) {
+        HandoverCard card = getOwned(id, requester);
+        if (card.getStatus() != HandoverStatus.FAILED) {
+            throw new InvalidCardStateException("Only failed handover cards can be reprocessed: " + id);
+        }
+        card.setStatus(HandoverStatus.RECEIVED);
+        card.setErrorMessage(null);
+        card.setTranscript(null);
+        card.setTranslatedText(null);
+        card.setSummaryJson(null);
+        return card;
+    }
+
+    private HandoverCard getOwned(Long id, Member requester) {
+        HandoverCard card = get(id);
+        if (!card.getOwner().getId().equals(requester.getId())) {
+            // 404, not 403 — avoids confirming to other users that this card ID exists
+            throw new ResourceNotFoundException("Handover card not found: " + id);
+        }
+        return card;
     }
 
     @Transactional

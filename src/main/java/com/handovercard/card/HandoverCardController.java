@@ -3,13 +3,19 @@ package com.handovercard.card;
 import com.handovercard.card.dto.HandoverCardCreatedResponse;
 import com.handovercard.card.dto.HandoverCardResponse;
 import com.handovercard.card.dto.HandoverCardUploadRequest;
+import com.handovercard.common.PageResponse;
 import com.handovercard.pipeline.HandoverProcessingPipeline;
 import com.handovercard.security.CustomUserDetails;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,7 +24,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/handover-cards")
@@ -54,10 +59,27 @@ public class HandoverCardController {
     }
 
     @GetMapping
-    public ResponseEntity<List<HandoverCardResponse>> list(@AuthenticationPrincipal CustomUserDetails principal) {
-        List<HandoverCardResponse> cards = handoverCardService.listAccessible(principal.getMember()).stream()
-                .map(handoverCardMapper::toResponse)
-                .toList();
-        return ResponseEntity.ok(cards);
+    public ResponseEntity<PageResponse<HandoverCardResponse>> list(
+            @AuthenticationPrincipal CustomUserDetails principal,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        Page<HandoverCardResponse> cards = handoverCardService.listAccessible(principal.getMember(), pageable)
+                .map(handoverCardMapper::toResponse);
+        return ResponseEntity.ok(PageResponse.from(cards));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id, @AuthenticationPrincipal CustomUserDetails principal) {
+        handoverCardService.delete(id, principal.getMember());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/reprocess")
+    public ResponseEntity<HandoverCardCreatedResponse> reprocess(@PathVariable Long id,
+                                                                   @AuthenticationPrincipal CustomUserDetails principal) {
+        HandoverCard card = handoverCardService.reprocess(id, principal.getMember());
+        processingPipeline.processAsync(card.getId());
+
+        HandoverCardCreatedResponse body = new HandoverCardCreatedResponse(card.getId(), card.getStatus());
+        return ResponseEntity.accepted().body(body);
     }
 }

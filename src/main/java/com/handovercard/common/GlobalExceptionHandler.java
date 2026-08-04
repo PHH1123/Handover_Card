@@ -3,6 +3,7 @@ package com.handovercard.common;
 import com.handovercard.auth.DuplicateEmailException;
 import com.handovercard.auth.InvalidCredentialsException;
 import com.handovercard.auth.InvalidTokenException;
+import com.handovercard.card.InvalidCardStateException;
 import com.handovercard.storage.StorageException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
@@ -40,6 +41,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleInvalidToken(InvalidTokenException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(ApiErrorResponse.of(HttpStatus.UNAUTHORIZED.value(), "Unauthorized", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidCardStateException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidCardState(InvalidCardStateException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
