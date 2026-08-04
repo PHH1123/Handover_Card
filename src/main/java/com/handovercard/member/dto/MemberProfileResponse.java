@@ -1,14 +1,24 @@
 package com.handovercard.member.dto;
 
 import com.handovercard.member.Member;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
 
 public record MemberProfileResponse(
+        @Schema(description = "회원 ID")
         Long id,
+
+        @Schema(description = "이메일")
         String email,
+
+        @Schema(description = "이름")
         String name,
+
+        @Schema(description = "권한 (USER 또는 ADMIN)")
         String role,
+
+        @Schema(description = "가입 일시")
         Instant createdAt
 ) {
 

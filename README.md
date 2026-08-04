@@ -31,6 +31,12 @@ export JWT_SECRET=...  # 프로덕션에서는 필수 (미설정 시 개발용 �
 
 ## API
 
+애플리케이션 실행 후 아래에서 전체 API 문서(Swagger UI)를 확인할 수 있습니다. 우측 상단 Authorize 버튼에
+로그인으로 발급받은 accessToken을 입력하면 인증이 필요한 API도 바로 호출해볼 수 있습니다.
+
+- Swagger UI: http://localhost:8080/swagger-ui/index.html
+- OpenAPI 스펙(JSON): http://localhost:8080/v3/api-docs
+
 ### 인증 (`/api/auth/**`, 인증 불필요)
 
 - `POST /api/auth/signup` (JSON: `email`, `password`, `name`) → 201 Created
