@@ -1,5 +1,6 @@
 package com.handovercard.member;
 
+import com.handovercard.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,17 +12,13 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
-import java.time.Instant;
 
 @Entity
 @Table(name = "members")
 @Getter
 @Setter
 @NoArgsConstructor
-public class Member {
+public class Member extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,14 +36,6 @@ public class Member {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private MemberRole role;
-
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @UpdateTimestamp
-    @Column(nullable = false)
-    private Instant updatedAt;
 
     public Member(String email, String password, String name, MemberRole role) {
         this.email = email;

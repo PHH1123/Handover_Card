@@ -1,5 +1,6 @@
 package com.handovercard.card;
 
+import com.handovercard.common.BaseEntity;
 import com.handovercard.member.Member;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,17 +16,13 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
-import java.time.Instant;
 
 @Entity
 @Table(name = "handover_cards")
 @Getter
 @Setter
 @NoArgsConstructor
-public class HandoverCard {
+public class HandoverCard extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -74,14 +71,6 @@ public class HandoverCard {
 
     @Column(columnDefinition = "TEXT")
     private String errorMessage;
-
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @UpdateTimestamp
-    @Column(nullable = false)
-    private Instant updatedAt;
 
     public HandoverCard(Member owner, String senderName, String receiverName, String sourceLanguage, String targetLanguage,
                          String audioFilePath, String originalFilename, String contentType, Long fileSizeBytes) {

@@ -1,5 +1,6 @@
 package com.handovercard.auth;
 
+import com.handovercard.common.BaseEntity;
 import com.handovercard.member.Member;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -13,7 +14,6 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.Instant;
 
@@ -22,7 +22,7 @@ import java.time.Instant;
 @Getter
 @Setter
 @NoArgsConstructor
-public class RefreshToken {
+public class RefreshToken extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -40,10 +40,6 @@ public class RefreshToken {
 
     @Column(nullable = false)
     private boolean revoked;
-
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false)
-    private Instant createdAt;
 
     public RefreshToken(Member member, String tokenId, Instant expiresAt) {
         this.member = member;
