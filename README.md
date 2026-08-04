@@ -7,9 +7,9 @@
 - OpenAI API Key
 
 ## 아키텍처
-- 음성 파일 업로드 → 전사/번역(`transcription` 패키지, OpenAI `gpt-4o-mini-transcribe`(STT) + `gpt-4o-mini`(번역) 실연동, `transcription.provider=openai`) → OpenAI 요약(`summarization` 패키지, 실연동) → 인계 카드 저장
+- 음성 파일 업로드 → 전사/번역(`transcription` 패키지, OpenAI `gpt-4o-mini-transcribe`(STT) + `gpt-4o-mini`(번역) 실연동, `transcription.provider=openai`) → 요약(`summarization` 패키지, `gpt-4o-mini`, `summarization.provider=openai`) → 인계 카드 저장
 - 전체 파이프라인은 비동기(`pipeline.HandoverProcessingPipeline`)로 처리되며, 카드의 `status`를 폴링해서 진행 상황을 확인
-- `transcription.TranscriptionService` 인터페이스로 추상화되어 있어, 기본값은 여전히 `mock`이며 `transcription.provider=openai`로 전환 시 실제 STT/번역이 동작. 추후 실시간 Agora RTC 채널 기반 구현체로도 교체 가능 (`transcription.provider=agora`)
+- `transcription.TranscriptionService`/`summarization.SummarizationService` 둘 다 `mock`/`openai` provider 스위치로 추상화됨. 기본값(코드 레벨)은 둘 다 `mock`이며, 로컬 실행용 `application.yml`은 `transcription.provider=mock`(테스트 환경 보호) / `summarization.provider=openai`(현행 실동작 유지)로 서로 다르게 설정되어 있음. 테스트 프로필(`application-test.yml`)은 둘 다 `mock`으로 강제해 네트워크 호출 없이 동작. 추후 실시간 Agora RTC 채널 기반 전사 구현체로도 교체 가능 (`transcription.provider=agora`)
 - 회원가입/로그인은 Spring Security + JWT(Access/Refresh) 기반(`member`, `auth`, `security` 패키지). `/api/handover-cards/**`를 포함한 모든 API는 `/api/auth/**`를 제외하고 인증 필요. Refresh Token은 DB(`refresh_tokens`)에 저장되어 재발급 시 회전(rotation)되고, 로그아웃/재사용 시 폐기됨
 
 ## 실행 방법
@@ -22,6 +22,7 @@ export DB_USERNAME=handover
 export DB_PASSWORD=handover
 export OPENAI_API_KEY=sk-...
 export TRANSCRIPTION_PROVIDER=openai  # 실제 STT/번역 사용 시 (기본값은 mock)
+export SUMMARIZATION_PROVIDER=mock  # 요약도 mock으로 돌리고 싶을 때 (기본값은 openai)
 export JWT_SECRET=...  # 프로덕션에서는 필수 (미설정 시 개발용 기본값 사용, 32바이트 이상)
 
 ./gradlew bootRun

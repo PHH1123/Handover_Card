@@ -5,9 +5,11 @@ import com.handovercard.summarization.SummarizationRequest;
 import com.handovercard.summarization.SummarizationService;
 import com.handovercard.summarization.SummaryResult;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 @Service
+@ConditionalOnProperty(prefix = "summarization", name = "provider", havingValue = "openai")
 public class OpenAiSummarizationService implements SummarizationService {
 
     private static final String SYSTEM_PROMPT = """

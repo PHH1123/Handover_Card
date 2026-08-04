@@ -38,6 +38,11 @@ transcription:
   mock:
     simulated-delay-ms: 800
 
+summarization:
+  provider: openai
+  mock:
+    simulated-delay-ms: 500
+
 jwt:
   # MUST be overridden via JWT_SECRET in any non-local environment — this default is dev-only.
   secret: ${JWT_SECRET:dev-only-change-me-please-this-secret-must-be-at-least-32-bytes-long-in-production}
