@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: handover-card
+  datasource:
+    url: jdbc:mysql://localhost:3306/handover_card?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${DB_USERNAME:handover}
+    password: ${DB_PASSWORD:handover}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 26MB
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        model: gpt-4o-mini
+      audio:
+        transcription:
+          model: gpt-4o-mini-transcribe
+
+server:
+  port: 8080
+
+handover:
+  storage:
+    base-dir: ./data/audio
+  async:
+    core-pool-size: 2
+    max-pool-size: 5
+    queue-capacity: 50
+
+transcription:
+  provider: mock
+  mock:
+    simulated-delay-ms: 800
+
+jwt:
+  # MUST be overridden via JWT_SECRET in any non-local environment — this default is dev-only.
+  secret: ${JWT_SECRET:dev-only-change-me-please-this-secret-must-be-at-least-32-bytes-long-in-production}
+  access-token-validity-seconds: 1800
+  refresh-token-validity-seconds: 1209600
+
+# future, added when real Agora RTT is wired in:
+# agora:
+#   app-id: ${AGORA_APP_ID:}
+#   app-certificate: ${AGORA_APP_CERTIFICATE:}
