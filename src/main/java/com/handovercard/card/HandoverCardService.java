@@ -4,11 +4,15 @@ import tools.jackson.databind.ObjectMapper;
 import com.handovercard.card.dto.HandoverCardUploadRequest;
 import com.handovercard.common.ResourceNotFoundException;
 import com.handovercard.member.Member;
+import com.handovercard.member.MemberRepository;
 import com.handovercard.storage.AudioStorageService;
 import com.handovercard.storage.StoredAudio;
 import com.handovercard.summarization.SummaryResult;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.util.List;
 
 @Service
 public class HandoverCardService {
@@ -16,12 +20,14 @@ public class HandoverCardService {
     private static final int MAX_ERROR_MESSAGE_LENGTH = 2000;
 
     private final HandoverCardRepository repository;
+    private final MemberRepository memberRepository;
     private final AudioStorageService audioStorageService;
     private final ObjectMapper objectMapper;
 
-    public HandoverCardService(HandoverCardRepository repository, AudioStorageService audioStorageService,
-                                ObjectMapper objectMapper) {
+    public HandoverCardService(HandoverCardRepository repository, MemberRepository memberRepository,
+                                AudioStorageService audioStorageService, ObjectMapper objectMapper) {
         this.repository = repository;
+        this.memberRepository = memberRepository;
         this.audioStorageService = audioStorageService;
         this.objectMapper = objectMapper;
     }
@@ -36,6 +42,9 @@ public class HandoverCardService {
                 request.getTargetLanguage(),
                 null, null, null, null
         );
+        if (StringUtils.hasText(request.getReceiverEmail())) {
+            memberRepository.findByEmail(request.getReceiverEmail()).ifPresent(card::setReceiver);
+        }
         card = repository.save(card);
 
         StoredAudio stored = audioStorageService.store(request.getAudio(), card.getId());
@@ -54,13 +63,25 @@ public class HandoverCardService {
     }
 
     @Transactional(readOnly = true)
-    public HandoverCard getOwned(Long id, Member requester) {
+    public HandoverCard getAccessible(Long id, Member requester) {
         HandoverCard card = get(id);
-        if (!card.getOwner().getId().equals(requester.getId())) {
+        if (!isAccessibleTo(card, requester)) {
             // 404, not 403 — avoids confirming to other users that this card ID exists
             throw new ResourceNotFoundException("Handover card not found: " + id);
         }
         return card;
+    }
+
+    @Transactional(readOnly = true)
+    public List<HandoverCard> listAccessible(Member requester) {
+        return repository.findAllAccessibleTo(requester);
+    }
+
+    private boolean isAccessibleTo(HandoverCard card, Member requester) {
+        if (card.getOwner().getId().equals(requester.getId())) {
+            return true;
+        }
+        return card.getReceiver() != null && card.getReceiver().getId().equals(requester.getId());
     }
 
     @Transactional

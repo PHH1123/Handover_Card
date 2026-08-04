@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/handover-cards")
@@ -48,7 +49,15 @@ public class HandoverCardController {
 
     @GetMapping("/{id}")
     public ResponseEntity<HandoverCardResponse> get(@PathVariable Long id, @AuthenticationPrincipal CustomUserDetails principal) {
-        HandoverCard card = handoverCardService.getOwned(id, principal.getMember());
+        HandoverCard card = handoverCardService.getAccessible(id, principal.getMember());
         return ResponseEntity.ok(handoverCardMapper.toResponse(card));
+    }
+
+    @GetMapping
+    public ResponseEntity<List<HandoverCardResponse>> list(@AuthenticationPrincipal CustomUserDetails principal) {
+        List<HandoverCardResponse> cards = handoverCardService.listAccessible(principal.getMember()).stream()
+                .map(handoverCardMapper::toResponse)
+                .toList();
+        return ResponseEntity.ok(cards);
     }
 }

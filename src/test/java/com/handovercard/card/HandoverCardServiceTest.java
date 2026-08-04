@@ -2,6 +2,7 @@ package com.handovercard.card;
 
 import com.handovercard.common.ResourceNotFoundException;
 import com.handovercard.member.Member;
+import com.handovercard.member.MemberRepository;
 import com.handovercard.member.MemberRole;
 import com.handovercard.storage.AudioStorageService;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 import java.lang.reflect.Field;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,13 +21,15 @@ import static org.mockito.Mockito.when;
 class HandoverCardServiceTest {
 
     private HandoverCardRepository repository;
+    private MemberRepository memberRepository;
     private HandoverCardService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(HandoverCardRepository.class);
+        memberRepository = mock(MemberRepository.class);
         AudioStorageService audioStorageService = mock(AudioStorageService.class);
-        service = new HandoverCardService(repository, audioStorageService, new ObjectMapper());
+        service = new HandoverCardService(repository, memberRepository, audioStorageService, new ObjectMapper());
     }
 
     private Member member(long id, String email) {
@@ -51,33 +55,57 @@ class HandoverCardServiceTest {
     }
 
     @Test
-    void getOwnedReturnsCardWhenRequesterIsOwner() {
+    void getAccessibleReturnsCardWhenRequesterIsOwner() {
         Member owner = member(1L, "owner@example.com");
         HandoverCard card = card(10L, owner);
         when(repository.findById(10L)).thenReturn(Optional.of(card));
 
-        HandoverCard result = service.getOwned(10L, owner);
+        HandoverCard result = service.getAccessible(10L, owner);
 
         assertThat(result).isSameAs(card);
     }
 
     @Test
-    void getOwnedThrowsNotFoundWhenRequesterIsNotOwner() {
+    void getAccessibleReturnsCardWhenRequesterIsLinkedReceiver() {
+        Member owner = member(1L, "owner@example.com");
+        Member receiver = member(2L, "receiver@example.com");
+        HandoverCard card = card(10L, owner);
+        card.setReceiver(receiver);
+        when(repository.findById(10L)).thenReturn(Optional.of(card));
+
+        HandoverCard result = service.getAccessible(10L, receiver);
+
+        assertThat(result).isSameAs(card);
+    }
+
+    @Test
+    void getAccessibleThrowsNotFoundWhenRequesterIsNeitherOwnerNorReceiver() {
         Member owner = member(1L, "owner@example.com");
         Member stranger = member(2L, "stranger@example.com");
         HandoverCard card = card(10L, owner);
         when(repository.findById(10L)).thenReturn(Optional.of(card));
 
-        assertThatThrownBy(() -> service.getOwned(10L, stranger))
+        assertThatThrownBy(() -> service.getAccessible(10L, stranger))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
-    void getOwnedThrowsNotFoundWhenCardDoesNotExist() {
+    void getAccessibleThrowsNotFoundWhenCardDoesNotExist() {
         Member requester = member(1L, "owner@example.com");
         when(repository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.getOwned(99L, requester))
+        assertThatThrownBy(() -> service.getAccessible(99L, requester))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void listAccessibleDelegatesToRepositoryQuery() {
+        Member requester = member(1L, "owner@example.com");
+        HandoverCard card = card(10L, requester);
+        when(repository.findAllAccessibleTo(requester)).thenReturn(List.of(card));
+
+        List<HandoverCard> result = service.listAccessible(requester);
+
+        assertThat(result).containsExactly(card);
     }
 }

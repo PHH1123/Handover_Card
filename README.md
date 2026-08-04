@@ -11,6 +11,7 @@
 - 전체 파이프라인은 비동기(`pipeline.HandoverProcessingPipeline`)로 처리되며, 카드의 `status`를 폴링해서 진행 상황을 확인
 - `transcription.TranscriptionService`/`summarization.SummarizationService` 둘 다 `mock`/`openai` provider 스위치로 추상화됨. 기본값(코드 레벨)은 둘 다 `mock`이며, 로컬 실행용 `application.yml`은 `transcription.provider=mock`(테스트 환경 보호) / `summarization.provider=openai`(현행 실동작 유지)로 서로 다르게 설정되어 있음. 테스트 프로필(`application-test.yml`)은 둘 다 `mock`으로 강제해 네트워크 호출 없이 동작. 추후 실시간 Agora RTC 채널 기반 전사 구현체로도 교체 가능 (`transcription.provider=agora`)
 - 회원가입/로그인은 Spring Security + JWT(Access/Refresh) 기반(`member`, `auth`, `security` 패키지). `/api/handover-cards/**`를 포함한 모든 API는 `/api/auth/**`를 제외하고 인증 필요. Refresh Token은 DB(`refresh_tokens`)에 저장되어 재발급 시 회전(rotation)되고, 로그아웃/재사용 시 폐기됨
+- 카드는 생성자(owner)만 접근 가능한 게 기본이지만, 업로드 시 `receiverEmail`이 가입된 회원 이메일과 일치하면 그 회원도 조회 가능 (미가입 이메일이면 조용히 무시되고 카드 생성은 그대로 성공). `GET /api/handover-cards`로 본인이 owner이거나 receiver인 카드 전체 목록 조회 가능
 
 ## 실행 방법
 
@@ -49,15 +50,18 @@ curl -s -X POST http://localhost:8080/api/auth/login \
 
 ### 인계 카드 (`/api/handover-cards/**`, `Authorization: Bearer <accessToken>` 필요)
 
-- `POST /api/handover-cards` (multipart: `audio`, `senderName`, `receiverName`, `sourceLanguage`, `targetLanguage`) → 202 Accepted
-- `GET /api/handover-cards/{id}` → 카드 상세 및 진행 상태 조회
+- `POST /api/handover-cards` (multipart: `audio`, `senderName`, `receiverName`, `sourceLanguage`, `targetLanguage`, 선택: `receiverEmail`) → 202 Accepted
+- `GET /api/handover-cards/{id}` → 카드 상세 및 진행 상태 조회 (owner 또는 연결된 receiver만)
+- `GET /api/handover-cards` → 본인이 owner이거나 receiver인 카드 전체 목록 (최신순)
 
 ```bash
 curl -i -X POST http://localhost:8080/api/handover-cards \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -F "audio=@sample.mp3;type=audio/mpeg" \
   -F "senderName=Alex" -F "receiverName=Minji" \
-  -F "sourceLanguage=en" -F "targetLanguage=ko"
+  -F "sourceLanguage=en" -F "targetLanguage=ko" \
+  -F "receiverEmail=minji@example.com"
 
 curl -s -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/api/handover-cards/1
+curl -s -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/api/handover-cards
 ```
