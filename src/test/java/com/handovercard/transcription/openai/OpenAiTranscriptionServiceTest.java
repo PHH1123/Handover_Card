@@ -17,6 +17,8 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.ai.openai.OpenAiAudioTranscriptionModel;
 import org.springframework.ai.openai.OpenAiAudioTranscriptionOptions;
 
@@ -41,7 +43,7 @@ class OpenAiTranscriptionServiceTest {
 
     private OpenAiAudioTranscriptionModel transcriptionModel;
     private ChatModel chatModel;
-    private Path audioFile;
+    private Resource audioFile;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -52,8 +54,9 @@ class OpenAiTranscriptionServiceTest {
         chatModel = mock(ChatModel.class);
         when(chatModel.getOptions()).thenReturn(ChatOptions.builder().build());
 
-        audioFile = tempDir.resolve("sample.wav");
-        Files.write(audioFile, "fake-audio-bytes".getBytes(StandardCharsets.UTF_8));
+        Path file = tempDir.resolve("sample.wav");
+        Files.write(file, "fake-audio-bytes".getBytes(StandardCharsets.UTF_8));
+        audioFile = new FileSystemResource(file);
     }
 
     private OpenAiTranscriptionService service() {
@@ -166,7 +169,7 @@ class OpenAiTranscriptionServiceTest {
 
     @Test
     void throwsWhenAudioFileDoesNotExist() {
-        Path missing = tempDir.resolve("missing.wav");
+        Resource missing = new FileSystemResource(tempDir.resolve("missing.wav"));
         when(transcriptionModel.call(any(AudioTranscriptionPrompt.class)))
                 .thenThrow(new RuntimeException("file not found"));
 
