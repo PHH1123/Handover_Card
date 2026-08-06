@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>인수인계 카드 · Handover Card</title>
+    <th:block th:replace="~{fragments :: styles}"></th:block>
+</head>
+<body>
+<div class="wrap">
+    <div class="top">
+        <h1 style="margin: 0;">인수인계 카드</h1>
+        <form method="post" th:action="@{/web/logout}">
+            <a th:href="@{/web/teams}" style="margin-right: .8rem;">팀 관리</a>
+            <span class="muted" th:text="${memberName} + '님'" style="margin-right: .5rem;"></span>
+            <button type="submit" class="secondary">로그아웃</button>
+        </form>
+    </div>
+
+    <div class="alert info" th:if="${message}" th:text="${message}"></div>
+    <div class="alert error" th:if="${error}" th:text="${error}"></div>
+
+    <div class="card">
+        <h2>새 인수인계 업로드</h2>
+        <form id="uploadForm" method="post" th:action="@{/web/cards}" th:object="${uploadForm}" enctype="multipart/form-data">
+            <label>음성</label>
+            <div class="tabs">
+                <button type="button" class="tab active" data-tab="file">파일 업로드</button>
+                <button type="button" class="tab" data-tab="record">직접 녹음</button>
+            </div>
+
+            <div data-panel="file">
+                <input type="file" id="audio" name="audio" accept="audio/*">
+                <p class="muted" style="margin: .4rem 0 0;">mp3 / wav / m4a / ogg / aac</p>
+            </div>
+
+            <div data-panel="record" hidden>
+                <p class="muted" id="recordUnsupported" hidden></p>
+                <div class="recorder" id="recorder">
+                    <button type="button" id="recordButton">
+                        <span class="rec-dot idle"></span><span id="recordLabel">녹음 시작</span>
+                    </button>
+                    <span class="timer" id="recordTimer">00:00</span>
+                    <button type="button" class="secondary" id="recordReset" hidden>다시 녹음</button>
+                </div>
+                <div class="meter-wrap" id="meterWrap" hidden>
+                    <div class="meter"><div class="meter-bar" id="meterBar"></div></div>
+                    <span class="muted" id="meterHint">입력 확인 중...</span>
+                </div>
+                <audio id="recordPreview" controls hidden></audio>
+                <div class="muted" id="recordInfo" hidden></div>
+                <a id="recordDownload" hidden download>녹음 파일 내려받기 (다른 재생기로 확인)</a>
+                <div class="field-error" id="recordError"></div>
+            </div>
+
+            <div class="audio-status muted" id="audioStatus">선택된 음성이 없습니다.</div>
+            <div class="field-error" th:if="${#fields.hasErrors('audio')}" th:errors="*{audio}"></div>
+
+            <div class="row">
+                <div>
+                    <label for="senderName">인수인계자 이름 (내 계정)</label>
+                    <input type="text" id="senderName" th:field="*{senderName}" readonly>
+                    <div class="field-error" th:if="${#fields.hasErrors('senderName')}" th:errors="*{senderName}"></div>
+                </div>
+                <div>
+                    <label for="receiverName">인수받는 사람 이름</label>
+                    <input type="text" id="receiverName" th:field="*{receiverName}" placeholder="Minji" required>
+                    <div class="field-error" th:if="${#fields.hasErrors('receiverName')}" th:errors="*{receiverName}"></div>
+                </div>
+            </div>
+
+            <label for="receiverEmail">수신자 이메일 (선택 · 가입된 회원이면 이 카드를 함께 볼 수 있음)</label>
+            <input type="email" id="receiverEmail" th:field="*{receiverEmail}" list="receiverEmailOptions"
+                   placeholder="minji@example.com" autocomplete="off">
+            <datalist id="receiverEmailOptions"></datalist>
+            <div class="muted" id="receiverLookupHint" style="margin-top: .3rem; font-size: .82rem;"></div>
+            <div class="field-error" th:if="${#fields.hasErrors('receiverEmail')}" th:errors="*{receiverEmail}"></div>
+
+            <div class="row">
+                <div>
+                    <label for="sourceLanguage">원본 언어</label>
+                    <select id="sourceLanguage" th:field="*{sourceLanguage}" required>
+                        <option th:each="lang : ${languages}"
+                                th:value="${lang.code}"
+                                th:text="${lang.label} + ' (' + ${lang.code} + ')'"></option>
+                    </select>
+                    <div class="field-error" th:if="${#fields.hasErrors('sourceLanguage')}" th:errors="*{sourceLanguage}"></div>
+                </div>
+                <div>
+                    <label for="targetLanguage">번역 언어</label>
+                    <select id="targetLanguage" th:field="*{targetLanguage}" required>
+                        <option th:each="lang : ${languages}"
+                                th:value="${lang.code}"
+                                th:text="${lang.label} + ' (' + ${lang.code} + ')'"></option>
+                    </select>
+                    <div class="field-error" th:if="${#fields.hasErrors('targetLanguage')}" th:errors="*{targetLanguage}"></div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button type="submit">업로드하고 처리 시작</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2>내 카드 목록</h2>
+
+        <p class="muted" th:if="${cards.totalElements == 0}">아직 카드가 없습니다. 위에서 음성을 업로드해 보세요.</p>
+
+        <table th:if="${cards.totalElements > 0}">
+            <thead>
+            <tr>
+                <th>ID</th>
+                <th>발신 → 수신</th>
+                <th>팀</th>
+                <th>언어</th>
+                <th>상태</th>
+                <th>생성 일시</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="card : ${cards.content}">
+                <td><a th:href="@{/web/cards/{id}(id=${card.id})}" th:text="${card.id}"></a></td>
+                <td th:text="${card.senderName} + ' → ' + ${card.receiverName}"></td>
+                <td>
+                    <span class="badge" th:if="${card.teamName != null}" th:text="${card.teamName}"></span>
+                    <span class="muted" th:unless="${card.teamName != null}">–</span>
+                </td>
+                <td th:text="${card.sourceLanguage} + ' → ' + ${card.targetLanguage}"></td>
+                <td>
+                    <span class="badge"
+                          th:classappend="${card.status.name() == 'COMPLETED'} ? 'done' : (${card.status.name() == 'FAILED'} ? 'failed' : '')"
+                          th:text="${card.status}"></span>
+                </td>
+                <td class="muted" th:text="${card.createdAt}"></td>
+            </tr>
+            </tbody>
+        </table>
+
+        <div class="actions" th:if="${cards.totalPages > 1}">
+            <a th:if="${cards.number > 0}" th:href="@{/web/cards(page=${cards.number - 1})}">← 이전</a>
+            <span class="muted" th:text="${cards.number + 1} + ' / ' + ${cards.totalPages}"></span>
+            <a th:if="${cards.hasNext()}" th:href="@{/web/cards(page=${cards.number + 1})}">다음 →</a>
+        </div>
+    </div>
+</div>
+
+<script>
+/*
+ * 음성 입력: 파일 업로드 / 브라우저 직접 녹음.
+ * 녹음본은 MediaRecorder의 Blob을 File로 만들어 파일 input에 주입하므로,
+ * 서버로는 두 방식 모두 동일한 multipart 업로드로 전송된다.
+ */
+(function () {
+    var fileInput = document.getElementById('audio');
+    var statusBox = document.getElementById('audioStatus');
+    var form = document.getElementById('uploadForm');
+
+    var recorderBox = document.getElementById('recorder');
+    var recordButton = document.getElementById('recordButton');
+    var recordLabel = document.getElementById('recordLabel');
+    var recordDot = recordButton.querySelector('.rec-dot');
+    var recordTimer = document.getElementById('recordTimer');
+    var recordReset = document.getElementById('recordReset');
+    var recordPreview = document.getElementById('recordPreview');
+    var recordError = document.getElementById('recordError');
+    var recordInfo = document.getElementById('recordInfo');
+    var recordDownload = document.getElementById('recordDownload');
+    var unsupported = document.getElementById('recordUnsupported');
+    var meterWrap = document.getElementById('meterWrap');
+    var meterBar = document.getElementById('meterBar');
+    var meterHint = document.getElementById('meterHint');
+
+    var mediaRecorder = null;
+    var chunks = [];
+    var timerId = null;
+    var startedAt = 0;
+    var previewUrl = null;
+    var audioCtx = null;
+    var meterRaf = null;
+    var sawSignal = false;
+
+    // ---------- 탭 ----------
+    var tabs = document.querySelectorAll('.tab');
+    tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            tabs.forEach(function (t) { t.classList.toggle('active', t === tab); });
+            document.querySelectorAll('[data-panel]').forEach(function (panel) {
+                panel.hidden = panel.dataset.panel !== tab.dataset.tab;
+            });
+        });
+    });
+
+    // ---------- 상태 표시 ----------
+    function setStatus(text, kind) {
+        statusBox.textContent = text;
+        statusBox.className = 'audio-status ' + (kind === 'ready' ? 'ready' : (kind === 'error' ? 'field-error' : 'muted'));
+    }
+
+    function describe(file) {
+        var kb = file.size / 1024;
+        var size = kb >= 1024 ? (kb / 1024).toFixed(1) + 'MB' : Math.round(kb) + 'KB';
+        return '제출될 음성: ' + file.name + ' (' + size + ')';
+    }
+
+    fileInput.addEventListener('change', function () {
+        var file = fileInput.files[0];
+        clearRecordingUi();
+        setStatus(file ? describe(file) : '선택된 음성이 없습니다.', file ? 'ready' : 'none');
+    });
+
+    // ---------- 녹음 지원 여부 ----------
+    var canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+    if (!canRecord) {
+        recorderBox.hidden = true;
+        unsupported.hidden = false;
+        unsupported.textContent = window.isSecureContext
+            ? '이 브라우저는 녹음을 지원하지 않습니다. 파일 업로드를 이용해 주세요.'
+            : '녹음은 HTTPS 또는 localhost에서만 사용할 수 있습니다. 파일 업로드를 이용해 주세요.';
+    }
+
+    function pickMimeType() {
+        var candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+        for (var i = 0; i < candidates.length; i++) {
+            if (MediaRecorder.isTypeSupported(candidates[i])) {
+                return candidates[i];
+            }
+        }
+        return '';
+    }
+
+    function extensionFor(mimeType) {
+        if (mimeType.indexOf('mp4') !== -1) { return 'mp4'; }
+        if (mimeType.indexOf('ogg') !== -1) { return 'ogg'; }
+        return 'webm';
+    }
+
+    function formatElapsed(ms) {
+        var total = Math.floor(ms / 1000);
+        var mm = String(Math.floor(total / 60)).padStart(2, '0');
+        var ss = String(total % 60).padStart(2, '0');
+        return mm + ':' + ss;
+    }
+
+    function clearRecordingUi() {
+        if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+            previewUrl = null;
+        }
+        recordPreview.hidden = true;
+        recordPreview.removeAttribute('src');
+        recordReset.hidden = true;
+        recordTimer.textContent = '00:00';
+        recordError.textContent = '';
+        recordInfo.hidden = true;
+        recordDownload.hidden = true;
+        chunks = [];
+    }
+
+    /*
+     * 마이크 입력 레벨 미터.
+     * 녹음이 무음으로 잡히는 경우(권한·장치 문제)와 재생 쪽 문제를 눈으로 구분하기 위한 진단용.
+     */
+    function startMeter(stream) {
+        try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new Ctx();
+            var source = audioCtx.createMediaStreamSource(stream);
+            var analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 1024;
+            source.connect(analyser);
+
+            var samples = new Uint8Array(analyser.fftSize);
+            sawSignal = false;
+            meterWrap.hidden = false;
+
+            var tick = function () {
+                analyser.getByteTimeDomainData(samples);
+                var peak = 0;
+                for (var i = 0; i < samples.length; i++) {
+                    var level = Math.abs(samples[i] - 128) / 128;
+                    if (level > peak) { peak = level; }
+                }
+                if (peak > 0.02) { sawSignal = true; }
+                meterBar.style.width = Math.min(100, Math.round(peak * 180)) + '%';
+                meterHint.textContent = sawSignal ? '입력 감지됨' : '입력 없음 — 말해보세요';
+                meterRaf = requestAnimationFrame(tick);
+            };
+
+            /*
+             * getUserMedia 콜백 안에서 만든 AudioContext는 사용자 제스처와 동기적으로 이어지지 않아
+             * Chrome 자동재생 정책에 따라 suspended 상태로 시작한다. 그대로 두면 그래프가 처리되지
+             * 않아 분석 데이터가 계속 무음으로 나오므로 반드시 resume 후 측정을 시작해야 한다.
+             */
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume().then(tick).catch(tick);
+            } else {
+                tick();
+            }
+        } catch (e) {
+            // 미터는 보조 기능이라 실패해도 녹음 자체는 계속 진행한다
+            meterWrap.hidden = true;
+        }
+    }
+
+    /* 마이크 트랙 상태를 그대로 보여준다 — 권한/장치 문제인지 코드 문제인지 가르는 근거. */
+    function describeTrack(stream) {
+        var track = stream.getAudioTracks()[0];
+        if (!track) { return '오디오 트랙 없음'; }
+        var settings = track.getSettings ? track.getSettings() : {};
+        return '입력 장치: ' + (track.label || '(이름 없음)')
+            + ' · 상태 ' + track.readyState
+            + ' · muted=' + track.muted
+            + ' · enabled=' + track.enabled
+            + (settings.sampleRate ? ' · ' + settings.sampleRate + 'Hz' : '');
+    }
+
+    function stopMeter() {
+        if (meterRaf) {
+            cancelAnimationFrame(meterRaf);
+            meterRaf = null;
+        }
+        if (audioCtx) {
+            audioCtx.close();
+            audioCtx = null;
+        }
+        meterBar.style.width = '0';
+        meterWrap.hidden = true;
+    }
+
+    /*
+     * MediaRecorder가 만든 WebM은 duration 메타데이터가 없어 Chrome에서 duration이 Infinity로 잡히고
+     * 재생/탐색이 동작하지 않는 것처럼 보인다. 끝으로 한 번 탐색시켜 실제 길이를 계산하게 만든다.
+     */
+    function resolveDuration(audioEl, onResolved) {
+        if (audioEl.duration !== Infinity && !isNaN(audioEl.duration)) {
+            onResolved(audioEl.duration);
+            return;
+        }
+        var onTime = function () {
+            audioEl.removeEventListener('timeupdate', onTime);
+            audioEl.currentTime = 0;
+            onResolved(audioEl.duration);
+        };
+        audioEl.addEventListener('timeupdate', onTime);
+        audioEl.currentTime = 1e101;
+    }
+
+    function describeMicError(e) {
+        if (e && e.name === 'NotAllowedError') {
+            return '마이크 권한이 거부되었습니다. 브라우저 주소창의 권한 설정에서 허용해 주세요.';
+        }
+        if (e && e.name === 'NotFoundError') {
+            return '사용할 수 있는 마이크를 찾지 못했습니다.';
+        }
+        return '마이크를 열 수 없습니다: ' + (e && e.name ? e.name : e);
+    }
+
+    function startRecording() {
+        recordError.textContent = '';
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+            var mimeType = pickMimeType();
+            chunks = [];
+            mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
+
+            mediaRecorder.addEventListener('dataavailable', function (e) {
+                if (e.data && e.data.size > 0) { chunks.push(e.data); }
+            });
+            mediaRecorder.addEventListener('stop', function () {
+                stopMeter();
+                // 트랙을 닫아야 탭의 마이크 사용 표시가 사라진다
+                stream.getTracks().forEach(function (track) { track.stop(); });
+                finishRecording();
+            });
+            mediaRecorder.start();
+            startMeter(stream);
+
+            recordInfo.textContent = describeTrack(stream)
+                + (audioCtx ? ' · AudioContext ' + audioCtx.state : '');
+            recordInfo.hidden = false;
+
+            startedAt = Date.now();
+            recordTimer.textContent = '00:00';
+            timerId = setInterval(function () {
+                recordTimer.textContent = formatElapsed(Date.now() - startedAt);
+            }, 250);
+
+            recorderBox.classList.add('recording');
+            recordDot.classList.remove('idle');
+            recordLabel.textContent = '녹음 중지';
+            recordReset.hidden = true;
+            recordPreview.hidden = true;
+            setStatus('녹음 중입니다...', 'none');
+        }).catch(function (e) {
+            recordError.textContent = describeMicError(e);
+        });
+    }
+
+    function finishRecording() {
+        clearInterval(timerId);
+        recorderBox.classList.remove('recording');
+        recordDot.classList.add('idle');
+        recordLabel.textContent = '녹음 시작';
+
+        var mimeType = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+        var blob = new Blob(chunks, { type: mimeType });
+        if (blob.size === 0) {
+            recordError.textContent = '녹음된 내용이 없습니다. 다시 시도해 주세요.';
+            setStatus('선택된 음성이 없습니다.', 'none');
+            return;
+        }
+
+        var file = new File([blob], 'recording-' + Date.now() + '.' + extensionFor(mimeType), { type: mimeType });
+        var transfer = new DataTransfer();
+        transfer.items.add(file);
+        fileInput.files = transfer.files;
+
+        previewUrl = URL.createObjectURL(blob);
+        recordPreview.src = previewUrl;
+        recordPreview.hidden = false;
+        recordReset.hidden = false;
+        recordDownload.href = previewUrl;
+        recordDownload.setAttribute('download', file.name);
+        recordDownload.hidden = false;
+        setStatus(describe(file) + ' · 제출 전에 들어보세요', 'ready');
+
+        // 진단 정보: 무음이 녹음됐는지, 길이/포맷이 정상인지 바로 보이도록
+        var elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+        var bytesPerSec = elapsedSec > 0 ? Math.round(blob.size / elapsedSec) : blob.size;
+        recordPreview.addEventListener('loadedmetadata', function () {
+            resolveDuration(recordPreview, function (duration) {
+                var shown = (duration && isFinite(duration)) ? duration.toFixed(1) + '초' : '알 수 없음';
+                recordInfo.textContent = '포맷 ' + mimeType + ' · 길이 ' + shown
+                    + ' · 크기 ' + Math.round(blob.size / 1024) + 'KB (' + Math.round(bytesPerSec / 1024) + 'KB/초)'
+                    + (sawSignal ? ' · 마이크 입력 감지됨' : ' · ⚠ 녹음 중 마이크 입력이 감지되지 않았습니다');
+                recordInfo.hidden = false;
+            });
+        }, { once: true });
+
+        if (!sawSignal) {
+            recordError.textContent = '마이크에서 소리가 들어오지 않았습니다. Chrome 주소창 왼쪽 자물쇠 → 마이크 권한, '
+                + '그리고 macOS 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서 Chrome이 허용되어 있는지 확인해 주세요. '
+                + '입력 장치가 여러 개면 chrome://settings/content/microphone 에서 기본 장치를 바꿔보세요.';
+        }
+    }
+
+    recordButton.addEventListener('click', function () {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+        } else {
+            startRecording();
+        }
+    });
+
+    recordReset.addEventListener('click', function () {
+        clearRecordingUi();
+        fileInput.value = '';
+        setStatus('선택된 음성이 없습니다.', 'none');
+    });
+
+    /*
+     * 수신자 이름 → 같은 이름을 가진 회원들의 이메일 후보를 채운다.
+     * datalist라 후보가 없거나 미가입자여도 이메일을 직접 입력할 수 있다.
+     */
+    (function () {
+        var nameInput = document.getElementById('receiverName');
+        var emailInput = document.getElementById('receiverEmail');
+        var options = document.getElementById('receiverEmailOptions');
+        var hint = document.getElementById('receiverLookupHint');
+        if (!nameInput || !emailInput || !options) { return; }
+
+        var debounceId = null;
+        var lastQuery = null;
+
+        function render(result) {
+            var matches = result.matches || [];
+            options.textContent = '';
+            matches.forEach(function (member) {
+                var option = document.createElement('option');
+                option.value = member.email;
+                options.appendChild(option);
+            });
+
+            if (!result.hasTeam) {
+                hint.textContent = '팀에 소속되면 같은 팀원의 이메일이 자동으로 채워집니다. 지금은 이메일을 직접 입력해 주세요.';
+            } else if (matches.length === 0) {
+                hint.textContent = '\'' + result.teamName + '\' 팀에 이 이름을 가진 팀원이 없습니다. 이메일을 직접 입력해 주세요.';
+            } else if (matches.length === 1) {
+                // 이메일을 채우면 그 회원에게 카드 열람 권한이 생기므로 자동 입력하지 않고 직접 고르게 한다
+                hint.textContent = '같은 팀에서 1명을 찾았습니다 — 이메일 칸에서 선택하세요.';
+            } else {
+                hint.textContent = '같은 팀에 동명이인 ' + matches.length + '명이 있습니다 — 이메일 칸에서 선택하세요.';
+            }
+        }
+
+        function lookup() {
+            var name = nameInput.value.trim();
+            if (name === lastQuery) { return; }
+            lastQuery = name;
+
+            if (name.length < 2) {
+                options.textContent = '';
+                hint.textContent = '';
+                return;
+            }
+            // 쿠키의 액세스 토큰으로 인증되므로 SSR 화면에서도 REST API를 그대로 쓴다
+            fetch('/api/members/lookup?name=' + encodeURIComponent(name), { credentials: 'same-origin' })
+                .then(function (res) { return res.ok ? res.json() : { hasTeam: false, matches: [] }; })
+                .then(render)
+                .catch(function () { hint.textContent = ''; });
+        }
+
+        nameInput.addEventListener('input', function () {
+            clearTimeout(debounceId);
+            debounceId = setTimeout(lookup, 300);
+        });
+    })();
+
+    // ---------- 제출 가드 ----------
+    form.addEventListener('submit', function (e) {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            e.preventDefault();
+            recordError.textContent = '녹음을 먼저 중지해 주세요.';
+            return;
+        }
+        if (!fileInput.files || fileInput.files.length === 0) {
+            e.preventDefault();
+            setStatus('음성 파일을 선택하거나 직접 녹음해 주세요.', 'error');
+        }
+    });
+})();
+</script>
+</body>
+</html>

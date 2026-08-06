@@ -19,6 +19,7 @@ public class HandoverCardMapper {
                 card.getId(),
                 card.getSenderName(),
                 card.getReceiverName(),
+                card.getTeam() != null ? card.getTeam().getName() : null,
                 card.getSourceLanguage(),
                 card.getTargetLanguage(),
                 card.getStatus(),

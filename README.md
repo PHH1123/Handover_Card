@@ -3,7 +3,7 @@
 
 ## 요구 사항
 - JDK 25 (Gradle wrapper 9.6.1 기준, 빌드 툴체인이 25로 고정되어 있어 Gradle 실행용 JDK와 별개로 25가 설치되어 있어야 함)
-- MySQL (로컬 또는 Docker)
+- Docker (MySQL을 `docker-compose`로 실행)
 - OpenAI API Key
 
 ## 아키텍처
@@ -16,8 +16,8 @@
 ## 실행 방법
 
 ```bash
-# DB 준비 (예시)
-mysql -u root -e "CREATE DATABASE handover_card; CREATE USER 'handover'@'%' IDENTIFIED BY 'handover'; GRANT ALL ON handover_card.* TO 'handover'@'%';"
+# DB 준비 (Docker Compose로 MySQL 컨테이너 실행, docker-compose.yml 참고)
+docker compose up -d db
 
 export DB_USERNAME=handover
 export DB_PASSWORD=handover
@@ -28,6 +28,44 @@ export JWT_SECRET=...  # 프로덕션에서는 필수 (미설정 시 개발용 �
 
 ./gradlew bootRun
 ```
+
+DB 계정/데이터베이스는 컨테이너 최초 기동 시 `docker-compose.yml`의 환경변수(`DB_USERNAME`/`DB_PASSWORD`, 기본값 `handover`/`handover`)로 자동 생성됩니다. `.env` 파일을 사용하면 `set -a && source .env && set +a`로 환경변수를 한 번에 불러올 수 있습니다.
+
+DB를 내리려면 `docker compose down` (데이터까지 삭제하려면 `docker compose down -v`).
+
+## 확인용 웹 화면 (Thymeleaf SSR)
+
+API를 직접 호출하지 않고 브라우저에서 전체 기능을 확인할 수 있는 서버 사이드 렌더링 화면이 있습니다.
+
+- http://localhost:8080 (미로그인 시 로그인 화면으로 이동)
+
+| 경로 | 기능 |
+| --- | --- |
+| `/` | `/web/cards`로 리다이렉트 |
+| `/web/signup` | 회원가입 |
+| `/web/login` | 로그인 (액세스/리프레시 토큰을 HttpOnly 쿠키로 발급) |
+| `/web/cards` | 음성 업로드 폼 + 내가 접근 가능한 카드 목록(페이지네이션) |
+| `/web/cards/{id}` | 카드 상세 (전사/번역/요약, 삭제, FAILED일 때 재처리) |
+
+업로드 폼의 원본/번역 언어는 `web.SupportedLanguage`에 정의된 목록(영어/한국어/일본어/중국어/스페인어/베트남어)에서
+선택하며 기본값은 영어 → 한국어입니다. API는 기존대로 임의의 언어 코드 문자열을 받습니다.
+
+음성은 **파일 업로드**와 **브라우저 직접 녹음** 두 방식을 지원합니다. 녹음은 별도 라이브러리 없이 브라우저의
+`MediaRecorder`를 사용하며, 녹음본을 파일 input에 주입하기 때문에 서버로는 두 방식 모두 동일한 multipart 업로드로
+전송됩니다. 녹음 후 제출 전에 미리듣기로 확인하고 다시 녹음할 수 있습니다.
+
+> 마이크 접근(`getUserMedia`)은 보안 컨텍스트에서만 허용됩니다. `localhost`는 예외라 로컬 개발은 그대로 되지만,
+> **배포 시 HTTP로 서비스하면 녹음 기능이 동작하지 않으므로 HTTPS가 필요합니다.** 지원하지 않는 환경에서는
+> 녹음 탭에 안내 문구가 표시되고 파일 업로드로 대체할 수 있습니다.
+
+녹음 결과 포맷은 브라우저마다 달라(Chrome·Firefox `webm`, Safari `mp4`) 저장소 허용 확장자에 둘 다 포함되어
+있습니다(`LocalFileSystemAudioStorageService`). OpenAI 전사 API가 두 포맷을 모두 지원하므로 서버 측 변환은 없습니다.
+
+REST API와 동일한 서비스 계층·JWT를 그대로 사용하며, 브라우저가 `Authorization` 헤더를 붙일 수 없으므로
+토큰만 쿠키로 주고받습니다(`JwtAuthenticationFilter`가 헤더 → 쿠키 순으로 토큰을 찾음). 카드 상태가 처리 중이면
+상세 화면이 3초마다 자동 새로고침되어 비동기 파이프라인의 진행 상황을 볼 수 있습니다.
+
+로컬에서 OpenAI 호출 없이 화면만 확인하려면 `TRANSCRIPTION_PROVIDER=mock SUMMARIZATION_PROVIDER=mock`으로 실행하세요.
 
 ## API
 

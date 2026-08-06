@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>회원가입 · Handover Card</title>
+    <th:block th:replace="~{fragments :: styles}"></th:block>
+</head>
+<body>
+<div class="wrap" style="max-width: 420px;">
+    <h1>Handover Card</h1>
+
+    <div class="card">
+        <h2>회원가입</h2>
+
+        <div class="alert error" th:if="${error}" th:text="${error}"></div>
+
+        <form method="post" th:action="@{/web/signup}" th:object="${form}">
+            <label for="email">이메일</label>
+            <input type="email" id="email" th:field="*{email}" required autofocus>
+            <div class="field-error" th:if="${#fields.hasErrors('email')}" th:errors="*{email}"></div>
+
+            <label for="password">비밀번호 (8자 이상)</label>
+            <input type="password" id="password" th:field="*{password}" required>
+            <div class="field-error" th:if="${#fields.hasErrors('password')}" th:errors="*{password}"></div>
+
+            <label for="name">이름</label>
+            <input type="text" id="name" th:field="*{name}" required>
+            <div class="field-error" th:if="${#fields.hasErrors('name')}" th:errors="*{name}"></div>
+
+            <div class="actions">
+                <button type="submit">가입하기</button>
+            </div>
+        </form>
+
+        <p class="muted" style="margin-bottom: 0;">
+            이미 계정이 있나요? <a th:href="@{/web/login}">로그인</a>
+        </p>
+    </div>
+</div>
+</body>
+</html>

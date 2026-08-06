@@ -7,6 +7,8 @@ import com.handovercard.card.HandoverCardRepository;
 import com.handovercard.common.ResourceNotFoundException;
 import com.handovercard.member.dto.MemberProfileResponse;
 import com.handovercard.storage.AudioStorageService;
+import com.handovercard.team.TeamJoinRequestRepository;
+import com.handovercard.team.TeamRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,6 +32,8 @@ class MemberServiceTest {
     private HandoverCardRepository handoverCardRepository;
     private AudioStorageService audioStorageService;
     private PasswordEncoder passwordEncoder;
+    private TeamRepository teamRepository;
+    private TeamJoinRequestRepository teamJoinRequestRepository;
     private MemberService service;
 
     @BeforeEach
@@ -39,8 +43,10 @@ class MemberServiceTest {
         handoverCardRepository = mock(HandoverCardRepository.class);
         audioStorageService = mock(AudioStorageService.class);
         passwordEncoder = mock(PasswordEncoder.class);
+        teamRepository = mock(TeamRepository.class);
+        teamJoinRequestRepository = mock(TeamJoinRequestRepository.class);
         service = new MemberService(memberRepository, refreshTokenRepository, handoverCardRepository,
-                audioStorageService, passwordEncoder);
+                audioStorageService, passwordEncoder, teamRepository, teamJoinRequestRepository);
     }
 
     private Member member(long id) {

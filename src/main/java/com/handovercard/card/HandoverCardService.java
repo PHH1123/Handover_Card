@@ -8,6 +8,7 @@ import com.handovercard.member.MemberRepository;
 import com.handovercard.storage.AudioStorageService;
 import com.handovercard.storage.StoredAudio;
 import com.handovercard.summarization.SummaryResult;
+import com.handovercard.team.Team;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,9 @@ public class HandoverCardService {
                 request.getTargetLanguage(),
                 null, null, null, null
         );
+        // 작성 시점의 소속 팀을 박아 둬야 이후 팀 이동이 과거 카드 접근에 영향을 주지 않는다
+        card.setTeam(teamOf(owner));
+
         if (StringUtils.hasText(request.getReceiverEmail())) {
             memberRepository.findByEmail(request.getReceiverEmail()).ifPresent(card::setReceiver);
         }
@@ -74,14 +78,30 @@ public class HandoverCardService {
 
     @Transactional(readOnly = true)
     public Page<HandoverCard> listAccessible(Member requester, Pageable pageable) {
-        return repository.findAllAccessibleTo(requester, pageable);
+        return repository.findAllAccessibleTo(requester, teamOf(requester), pageable);
     }
 
     private boolean isAccessibleTo(HandoverCard card, Member requester) {
         if (card.getOwner().getId().equals(requester.getId())) {
             return true;
         }
-        return card.getReceiver() != null && card.getReceiver().getId().equals(requester.getId());
+        if (card.getReceiver() != null && card.getReceiver().getId().equals(requester.getId())) {
+            return true;
+        }
+        // 카드가 만들어진 팀의 팀원이면 함께 볼 수 있다
+        Team requesterTeam = teamOf(requester);
+        return card.getTeam() != null && requesterTeam != null
+                && card.getTeam().getId().equals(requesterTeam.getId());
+    }
+
+    /**
+     * 회원의 소속 팀을 다시 읽어 온다.
+     * 인증 필터가 넘겨준 Member는 준영속이라 지연 로딩된 team을 그대로 건드리면 예외가 난다.
+     */
+    private Team teamOf(Member member) {
+        return memberRepository.findById(member.getId())
+                .map(Member::getTeam)
+                .orElse(null);
     }
 
     @Transactional

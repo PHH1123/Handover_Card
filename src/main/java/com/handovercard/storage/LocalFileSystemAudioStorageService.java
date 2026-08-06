@@ -14,7 +14,8 @@ import java.util.UUID;
 @Service
 public class LocalFileSystemAudioStorageService implements AudioStorageService {
 
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("mp3", "wav", "m4a", "ogg", "aac");
+    // webm/mp4는 브라우저 MediaRecorder의 출력 포맷 (Chrome·Firefox는 webm, Safari는 mp4)
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("mp3", "wav", "m4a", "ogg", "aac", "webm", "mp4");
 
     private final Path baseDir;
 

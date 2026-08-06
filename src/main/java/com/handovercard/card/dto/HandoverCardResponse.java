@@ -15,6 +15,9 @@ public record HandoverCardResponse(
         @Schema(description = "수신자 이름")
         String receiverName,
 
+        @Schema(description = "카드가 만들어질 당시 작성자의 소속 팀 이름. 이 팀의 팀원은 카드를 함께 볼 수 있습니다. 팀 없이 만들었으면 null")
+        String teamName,
+
         @Schema(description = "원본 음성 언어 코드")
         String sourceLanguage,
 
