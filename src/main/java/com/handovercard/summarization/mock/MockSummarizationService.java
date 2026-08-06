@@ -3,6 +3,7 @@ package com.handovercard.summarization.mock;
 import com.handovercard.summarization.SummarizationException;
 import com.handovercard.summarization.SummarizationRequest;
 import com.handovercard.summarization.SummarizationService;
+import com.handovercard.summarization.SummaryEntry;
 import com.handovercard.summarization.SummaryResult;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -24,8 +25,10 @@ public class MockSummarizationService implements SummarizationService {
         simulateLatency();
 
         return new SummaryResult(
-                List.of("[mock summary, target=%s] %s".formatted(request.targetLanguage(), request.translatedText())),
-                List.of("[mock] Review the handover note"),
+                List.of(new SummaryEntry(
+                        "[mock summary, source=%s] %s".formatted(request.sourceLanguage(), request.transcript()),
+                        "[mock summary, target=%s] %s".formatted(request.targetLanguage(), request.translatedText()))),
+                List.of(new SummaryEntry("[mock] Review the handover note", "[mock] 인수인계 노트를 확인하세요")),
                 List.of()
         );
     }
