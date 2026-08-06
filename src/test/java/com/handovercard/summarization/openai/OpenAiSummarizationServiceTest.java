@@ -2,6 +2,7 @@ package com.handovercard.summarization.openai;
 
 import com.handovercard.summarization.SummarizationException;
 import com.handovercard.summarization.SummarizationRequest;
+import com.handovercard.summarization.SummaryEntry;
 import com.handovercard.summarization.SummaryResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,15 +42,19 @@ class OpenAiSummarizationServiceTest {
     }
 
     @Test
-    void parsesStructuredSummaryFromChatResponse() {
+    void parsesBilingualSummaryFromChatResponse() {
         stubChatReply("""
-                {"keyPoints":["Deployment is stable"],"actionItems":["Monitor queue"],"blockers":[]}""");
+                {"keyPoints":[{"source":"Deployment is stable","target":"배포가 안정적입니다"}],\
+                "actionItems":[{"source":"Monitor queue","target":"큐를 모니터링하세요"}],\
+                "blockers":[]}""");
 
         SummarizationRequest request = new SummarizationRequest("transcript", "translated", "en", "ko");
         SummaryResult result = service().summarize(request);
 
-        assertThat(result.keyPoints()).containsExactly("Deployment is stable");
-        assertThat(result.actionItems()).containsExactly("Monitor queue");
+        assertThat(result.keyPoints())
+                .containsExactly(new SummaryEntry("Deployment is stable", "배포가 안정적입니다"));
+        assertThat(result.actionItems())
+                .containsExactly(new SummaryEntry("Monitor queue", "큐를 모니터링하세요"));
         assertThat(result.blockers()).isEmpty();
     }
 

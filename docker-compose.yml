@@ -1,0 +1,22 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: handover-card-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: handover_card
+      MYSQL_USER: ${DB_USERNAME:-handover}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-handover}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:

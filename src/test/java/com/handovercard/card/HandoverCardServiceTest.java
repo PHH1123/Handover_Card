@@ -110,7 +110,8 @@ class HandoverCardServiceTest {
         Member requester = member(1L, "owner@example.com");
         HandoverCard card = card(10L, requester);
         Pageable pageable = PageRequest.of(0, 20);
-        when(repository.findAllAccessibleTo(requester, pageable)).thenReturn(new PageImpl<>(List.of(card)));
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(requester));
+        when(repository.findAllAccessibleTo(requester, null, pageable)).thenReturn(new PageImpl<>(List.of(card)));
 
         Page<HandoverCard> result = service.listAccessible(requester, pageable);
 

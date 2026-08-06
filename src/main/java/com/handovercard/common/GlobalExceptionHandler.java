@@ -5,18 +5,21 @@ import com.handovercard.auth.InvalidCredentialsException;
 import com.handovercard.auth.InvalidTokenException;
 import com.handovercard.card.InvalidCardStateException;
 import com.handovercard.storage.StorageException;
+import com.handovercard.team.TeamOperationException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 
 import java.util.List;
 
-@RestControllerAdvice
+// SSR 화면(@Controller)의 예외까지 JSON으로 바꿔버리지 않도록 REST 컨트롤러로만 범위를 제한한다.
+@RestControllerAdvice(annotations = RestController.class)
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -45,6 +48,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InvalidCardStateException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidCardState(InvalidCardStateException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage()));
+    }
+
+    @ExceptionHandler(TeamOperationException.class)
+    public ResponseEntity<ApiErrorResponse> handleTeamOperation(TeamOperationException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiErrorResponse.of(HttpStatus.CONFLICT.value(), "Conflict", ex.getMessage()));
     }
