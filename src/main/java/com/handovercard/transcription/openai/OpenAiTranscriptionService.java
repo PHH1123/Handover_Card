@@ -10,7 +10,6 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.openai.OpenAiAudioTranscriptionModel;
 import org.springframework.ai.openai.OpenAiAudioTranscriptionOptions;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -51,8 +50,7 @@ public class OpenAiTranscriptionService implements TranscriptionService {
             optionsBuilder.language(request.sourceLanguage());
         }
 
-        AudioTranscriptionPrompt prompt = new AudioTranscriptionPrompt(
-                new FileSystemResource(request.audioFilePath()), optionsBuilder.build());
+        AudioTranscriptionPrompt prompt = new AudioTranscriptionPrompt(request.audio(), optionsBuilder.build());
 
         AudioTranscriptionResponse response;
         try {

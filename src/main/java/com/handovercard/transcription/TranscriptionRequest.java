@@ -1,10 +1,10 @@
 package com.handovercard.transcription;
 
-import java.nio.file.Path;
+import org.springframework.core.io.Resource;
 
 public record TranscriptionRequest(
         Long cardId,
-        Path audioFilePath,
+        Resource audio,
         String sourceLanguage,
         String targetLanguage
 ) {

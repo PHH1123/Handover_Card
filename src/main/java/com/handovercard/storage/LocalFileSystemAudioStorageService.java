@@ -1,6 +1,8 @@
 package com.handovercard.storage;
 
 import jakarta.annotation.PostConstruct;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -60,8 +62,8 @@ public class LocalFileSystemAudioStorageService implements AudioStorageService {
     }
 
     @Override
-    public Path resolve(String relativePath) {
-        return baseDir.resolve(relativePath).normalize();
+    public Resource resolve(String relativePath) {
+        return new FileSystemResource(toPath(relativePath));
     }
 
     @Override
@@ -70,10 +72,18 @@ public class LocalFileSystemAudioStorageService implements AudioStorageService {
             return;
         }
         try {
-            Files.deleteIfExists(resolve(relativePath));
+            Files.deleteIfExists(toPath(relativePath));
         } catch (IOException e) {
             throw new StorageException("Failed to delete audio file: " + relativePath, e);
         }
+    }
+
+    private Path toPath(String relativePath) {
+        Path target = baseDir.resolve(relativePath).normalize();
+        if (!target.startsWith(baseDir)) {
+            throw new StorageException("Invalid audio file path: " + relativePath);
+        }
+        return target;
     }
 
     private String extractExtension(String originalFilename) {
