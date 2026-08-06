@@ -31,7 +31,18 @@ server:
 
 handover:
   storage:
+    # local: 로컬 디스크 / s3: S3 호환 저장소 (개발은 docker-compose의 MinIO, 운영은 AWS S3)
+    provider: ${STORAGE_PROVIDER:s3}
     base-dir: ./data/audio
+    s3:
+      bucket: ${S3_BUCKET:handover-audio}
+      region: ${S3_REGION:us-east-1}
+      # 운영(실제 AWS)에서는 비워 두면 기본 엔드포인트를 쓴다
+      endpoint: ${S3_ENDPOINT:http://localhost:9000}
+      # 운영에서는 비워 두고 인스턴스 역할 등 SDK 기본 자격증명 체인을 쓴다
+      access-key: ${S3_ACCESS_KEY:handover}
+      secret-key: ${S3_SECRET_KEY:handover-secret}
+      path-style-access: ${S3_PATH_STYLE:true}
   async:
     core-pool-size: 2
     max-pool-size: 5

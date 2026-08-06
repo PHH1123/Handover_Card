@@ -6,18 +6,16 @@ import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
-import java.util.Set;
-import java.util.UUID;
 
+/** 로컬 디스크 저장소. 테스트와, S3를 띄우기 번거로운 상황을 위한 기본 구현체다. */
 @Service
+@ConditionalOnProperty(prefix = "handover.storage", name = "provider", havingValue = "local", matchIfMissing = true)
 public class LocalFileSystemAudioStorageService implements AudioStorageService {
-
-    // webm/mp4는 브라우저 MediaRecorder의 출력 포맷 (Chrome·Firefox는 webm, Safari는 mp4)
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("mp3", "wav", "m4a", "ogg", "aac", "webm", "mp4");
 
     private final Path baseDir;
 
@@ -40,12 +38,7 @@ public class LocalFileSystemAudioStorageService implements AudioStorageService {
             throw new StorageException("Uploaded audio file is empty");
         }
 
-        String extension = extractExtension(file.getOriginalFilename());
-        if (!ALLOWED_EXTENSIONS.contains(extension)) {
-            throw new StorageException("Unsupported audio file extension: " + extension);
-        }
-
-        String storedFilename = cardId + "_" + UUID.randomUUID() + "." + extension;
+        String storedFilename = AudioFileNames.storedNameFor(file.getOriginalFilename(), cardId);
         Path target = baseDir.resolve(storedFilename).normalize();
 
         if (!target.getParent().equals(baseDir)) {
@@ -84,13 +77,5 @@ public class LocalFileSystemAudioStorageService implements AudioStorageService {
             throw new StorageException("Invalid audio file path: " + relativePath);
         }
         return target;
-    }
-
-    private String extractExtension(String originalFilename) {
-        if (originalFilename == null || !originalFilename.contains(".")) {
-            throw new StorageException("Audio file must have an extension");
-        }
-        String ext = originalFilename.substring(originalFilename.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
-        return ext;
     }
 }
