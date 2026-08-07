@@ -21,3 +21,9 @@ summarization:
   provider: mock
   mock:
     simulated-delay-ms: 0
+
+# 테스트는 외부 의존 없이 빠르게 돌아야 하므로 로컬 디스크를 쓴다.
+# S3 구현체는 S3AudioStorageServiceTest에서 별도로 검증한다.
+handover:
+  storage:
+    provider: local

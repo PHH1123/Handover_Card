@@ -16,8 +16,8 @@
 ## 실행 방법
 
 ```bash
-# DB 준비 (Docker Compose로 MySQL 컨테이너 실행, docker-compose.yml 참고)
-docker compose up -d db
+# DB와 오디오 저장소 준비 (docker-compose.yml 참고)
+docker compose up -d db storage storage-init
 
 export DB_USERNAME=handover
 export DB_PASSWORD=handover
@@ -32,6 +32,28 @@ export JWT_SECRET=...  # 프로덕션에서는 필수 (미설정 시 개발용 �
 DB 계정/데이터베이스는 컨테이너 최초 기동 시 `docker-compose.yml`의 환경변수(`DB_USERNAME`/`DB_PASSWORD`, 기본값 `handover`/`handover`)로 자동 생성됩니다. `.env` 파일을 사용하면 `set -a && source .env && set +a`로 환경변수를 한 번에 불러올 수 있습니다.
 
 DB를 내리려면 `docker compose down` (데이터까지 삭제하려면 `docker compose down -v`).
+
+## 오디오 저장소
+
+업로드된 음성은 `AudioStorageService` 뒤에 감춰져 있고 `handover.storage.provider`로 구현체를 고릅니다.
+
+| provider | 저장 위치 | 용도 |
+| --- | --- | --- |
+| `s3` (기본값) | S3 호환 저장소 | 개발은 docker-compose의 MinIO, 운영은 AWS S3 |
+| `local` | `./data/audio` | 테스트, 그리고 저장소를 띄우기 번거로울 때 |
+
+개발 환경에서 굳이 MinIO를 쓰는 이유는, 로컬 디스크로 개발하면 **S3 경로가 배포 전까지 한 번도 실행되지 않아**
+권한·키 네이밍·네트워크 오류 같은 문제가 전부 운영에서 처음 터지기 때문입니다. 엔드포인트만 다르고
+애플리케이션이 타는 코드는 개발과 운영이 같습니다.
+
+- MinIO 웹 콘솔: http://localhost:9001 (기본 계정 `handover` / `handover-secret`)
+- 저장소 없이 띄우려면 `STORAGE_PROVIDER=local`
+
+운영(AWS S3)에서는 `S3_ENDPOINT`를 비우면 실제 S3로 붙고, `S3_ACCESS_KEY`/`S3_SECRET_KEY`를 비우면
+인스턴스 역할 등 AWS SDK 기본 자격증명 체인을 사용합니다. `S3_PATH_STYLE=false`로 두는 것을 권장합니다.
+
+카드에 저장되는 값은 두 구현체 모두 같은 형식의 문자열(로컬 파일명 · S3 객체 키)이라, provider를 바꿔도
+이미 저장된 값의 의미가 달라지지 않습니다. 다만 **기존 파일이 자동으로 옮겨지지는 않습니다.**
 
 ## 확인용 웹 화면 (Thymeleaf SSR)
 

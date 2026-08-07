@@ -56,8 +56,7 @@ public class TeamService {
         member.setTeam(team);
 
         // 다른 팀에 걸어둔 대기 중 신청은 의미가 없어지므로 정리한다
-        joinRequestRepository.findByMemberAndStatus(member, TeamJoinRequestStatus.PENDING)
-                .ifPresent(request -> request.setStatus(TeamJoinRequestStatus.REJECTED));
+        rejectPendingRequestsOf(member);
         return toTeamResponse(team);
     }
 
@@ -67,7 +66,7 @@ public class TeamService {
         if (member.getTeam() != null) {
             throw new TeamOperationException("이미 팀에 소속되어 있습니다. 먼저 팀에서 나가야 신청할 수 있습니다.");
         }
-        if (joinRequestRepository.findByMemberAndStatus(member, TeamJoinRequestStatus.PENDING).isPresent()) {
+        if (!joinRequestRepository.findAllByMemberAndStatus(member, TeamJoinRequestStatus.PENDING).isEmpty()) {
             throw new TeamOperationException("이미 승인 대기 중인 신청이 있습니다.");
         }
         joinRequestRepository.save(new TeamJoinRequest(getTeam(teamId), member));
@@ -80,13 +79,16 @@ public class TeamService {
         if (applicant.getTeam() != null) {
             throw new TeamOperationException("이미 다른 팀에 소속된 회원입니다.");
         }
-        request.setStatus(TeamJoinRequestStatus.APPROVED);
+        request.approve();
         applicant.setTeam(request.getTeam());
+        // 어떤 이유로든 다른 대기 신청이 남아 있으면 함께 정리한다.
+        // 남겨두면 다른 팀장 화면에 처리할 수 없는 신청이 계속 뜬다.
+        rejectPendingRequestsOf(applicant);
     }
 
     @Transactional
     public void reject(Long requestId, Long leaderId) {
-        getPendingRequestLedBy(requestId, leaderId).setStatus(TeamJoinRequestStatus.REJECTED);
+        getPendingRequestLedBy(requestId, leaderId).reject();
     }
 
     /** 팀장을 같은 팀의 다른 팀원에게 넘긴다. 넘긴 사람은 일반 팀원으로 남는다. */
@@ -159,7 +161,8 @@ public class TeamService {
                     .map(this::toTeamResponse)
                     .toList();
             JoinRequestResponse pending = joinRequestRepository
-                    .findByMemberAndStatus(me, TeamJoinRequestStatus.PENDING)
+                    .findAllByMemberAndStatus(me, TeamJoinRequestStatus.PENDING).stream()
+                    .findFirst()
                     .map(this::toRequestResponse)
                     .orElse(null);
             List<JoinRequestResponse> history = joinRequestRepository.findAllByMemberOrderByCreatedAtDesc(me).stream()
@@ -199,6 +202,11 @@ public class TeamService {
         return joinRequestRepository.findAllByMemberOrderByCreatedAtDesc(getMember(memberId)).stream()
                 .map(this::toRequestResponse)
                 .toList();
+    }
+
+    private void rejectPendingRequestsOf(Member member) {
+        joinRequestRepository.findAllByMemberAndStatus(member, TeamJoinRequestStatus.PENDING)
+                .forEach(TeamJoinRequest::reject);
     }
 
     private Team requireLedTeam(Member member) {
@@ -250,7 +258,7 @@ public class TeamService {
             // 404, not 403 — 다른 팀의 신청이 존재한다는 사실 자체를 알리지 않는다
             throw new ResourceNotFoundException("Team join request not found: " + requestId);
         }
-        if (request.getStatus() != TeamJoinRequestStatus.PENDING) {
+        if (!request.isPending()) {
             throw new TeamOperationException("이미 처리된 신청입니다.");
         }
         return request;

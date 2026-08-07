@@ -2,18 +2,26 @@ package com.handovercard.team;
 
 import com.handovercard.auth.dto.LoginRequest;
 import com.handovercard.auth.dto.SignupRequest;
+import com.handovercard.member.Member;
+import com.handovercard.member.MemberRepository;
 import com.handovercard.team.dto.CreateTeamRequest;
 import com.handovercard.team.dto.TransferLeadershipRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.sql.Timestamp;
+import java.time.Instant;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -33,7 +41,35 @@ class TeamIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private MemberRepository memberRepository;
+
+    @Autowired
+    private TeamRepository teamRepository;
+
+    @Autowired
+    private TeamJoinRequestRepository joinRequestRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     private record Session(String email, String name, Long memberId, String accessToken) {
+    }
+
+    /**
+     * 대기 신청이 두 건인 상태를 억지로 만든다.
+     *
+     * <p>유니크 제약이 생긴 뒤로는 정상 경로로 만들 수 없으므로, 제약이 걸리기 전에 쌓였을
+     * 옛 데이터를 흉내내어 {@code pending_member_id}를 비운 채 넣는다. null은 유니크 제약에서
+     * 서로 다른 값으로 취급되어 삽입이 통과한다.
+     */
+    private void forceExtraPendingRequest(Team team, Member member) {
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbcTemplate.update("""
+                INSERT INTO team_join_requests
+                    (created_at, updated_at, team_id, member_id, status, pending_member_id)
+                VALUES (?, ?, ?, ?, 'PENDING', NULL)
+                """, now, now, team.getId(), member.getId());
     }
 
     // ---------- 헬퍼 ----------
@@ -181,6 +217,105 @@ class TeamIntegrationTest {
         mockMvc.perform(post("/api/teams/{id}/join-requests", teamId)
                         .header("Authorization", "Bearer " + applicant.accessToken()))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void applyingToASecondTeamWhileWaitingIsRejected() throws Exception {
+        Session leaderA = signupAndLogin("two-teams-a");
+        Session leaderB = signupAndLogin("two-teams-b");
+        Session applicant = signupAndLogin("two-teams-applicant");
+        Long teamA = createTeam(leaderA, uniqueTeamName("two-a"));
+        Long teamB = createTeam(leaderB, uniqueTeamName("two-b"));
+
+        apply(applicant, teamA);
+        mockMvc.perform(post("/api/teams/{id}/join-requests", teamB)
+                        .header("Authorization", "Bearer " + applicant.accessToken()))
+                .andExpect(status().isConflict());
+    }
+
+    /**
+     * 애플리케이션 검사만으로는 동시 요청이 겹칠 때 대기 신청이 두 건 생길 수 있어서
+     * DB 유니크 제약으로도 막는다. 여기서는 제약이 실제로 걸려 있는지를 확인한다.
+     */
+    @Test
+    void databaseRejectsASecondPendingRequestForTheSameMember() throws Exception {
+        Session leaderA = signupAndLogin("dup-db-a");
+        Session leaderB = signupAndLogin("dup-db-b");
+        Session applicant = signupAndLogin("dup-db-applicant");
+        Long teamA = createTeam(leaderA, uniqueTeamName("dup-db-a"));
+        Long teamB = createTeam(leaderB, uniqueTeamName("dup-db-b"));
+        apply(applicant, teamA);
+
+        Member member = memberRepository.findByEmail(applicant.email()).orElseThrow();
+        Team other = teamRepository.findById(teamB).orElseThrow();
+
+        // 서비스 검사를 우회해 저장소로 직접 넣어도 제약에 걸려야 한다
+        assertThatThrownBy(() -> joinRequestRepository.saveAndFlush(new TeamJoinRequest(other, member)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void aRejectedApplicantCanApplyAgain() throws Exception {
+        Session leader = signupAndLogin("reapply-leader");
+        Session applicant = signupAndLogin("reapply-applicant");
+        Long teamId = createTeam(leader, uniqueTeamName("reapply"));
+
+        apply(applicant, teamId);
+        mockMvc.perform(post("/api/teams/join-requests/{id}/reject", firstPendingRequestId(leader))
+                        .header("Authorization", "Bearer " + leader.accessToken()))
+                .andExpect(status().isNoContent());
+
+        // 처리된 신청은 이력으로 남으므로 유니크 제약이 재신청을 막으면 안 된다
+        apply(applicant, teamId);
+        mockMvc.perform(get("/api/teams/my-join-requests")
+                        .header("Authorization", "Bearer " + applicant.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void approvingClearsAnyOtherPendingRequestFromTheSameMember() throws Exception {
+        Session leaderA = signupAndLogin("clear-a");
+        Session leaderB = signupAndLogin("clear-b");
+        Session applicant = signupAndLogin("clear-applicant");
+        Long teamA = createTeam(leaderA, uniqueTeamName("clear-a"));
+        Long teamB = createTeam(leaderB, uniqueTeamName("clear-b"));
+        apply(applicant, teamA);
+
+        // 경합으로 두 번째 대기 신청이 생겨버린 상태를 만든다
+        Member member = memberRepository.findByEmail(applicant.email()).orElseThrow();
+        Team other = teamRepository.findById(teamB).orElseThrow();
+        forceExtraPendingRequest(other, member);
+
+        mockMvc.perform(post("/api/teams/join-requests/{id}/approve", firstPendingRequestId(leaderA))
+                        .header("Authorization", "Bearer " + leaderA.accessToken()))
+                .andExpect(status().isNoContent());
+
+        // 다른 팀장 화면에 처리할 수 없는 신청이 남으면 안 된다
+        mockMvc.perform(get("/api/teams/me/join-requests")
+                        .header("Authorization", "Bearer " + leaderB.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void aStrayPendingRequestDoesNotBreakApplying() throws Exception {
+        Session leaderA = signupAndLogin("stray-a");
+        Session leaderB = signupAndLogin("stray-b");
+        Session applicant = signupAndLogin("stray-applicant");
+        Long teamA = createTeam(leaderA, uniqueTeamName("stray-a"));
+        Long teamB = createTeam(leaderB, uniqueTeamName("stray-b"));
+        apply(applicant, teamA);
+        forceExtraPendingRequest(teamRepository.findById(teamB).orElseThrow(),
+                memberRepository.findByEmail(applicant.email()).orElseThrow());
+
+        // 대기 신청이 두 건이어도 조회·신청이 500으로 죽지 않고 409로 응답해야 한다
+        mockMvc.perform(post("/api/teams/{id}/join-requests", teamB)
+                        .header("Authorization", "Bearer " + applicant.accessToken()))
+                .andExpect(status().isConflict());
+        mockMvc.perform(get("/api/teams/my-join-requests")
+                        .header("Authorization", "Bearer " + applicant.accessToken()))
+                .andExpect(status().isOk());
     }
 
     @Test
