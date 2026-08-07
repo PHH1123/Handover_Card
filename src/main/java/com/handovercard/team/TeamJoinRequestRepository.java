@@ -4,7 +4,6 @@ import com.handovercard.member.Member;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
-import java.util.Optional;
 
 public interface TeamJoinRequestRepository extends JpaRepository<TeamJoinRequest, Long> {
 
@@ -12,7 +11,9 @@ public interface TeamJoinRequestRepository extends JpaRepository<TeamJoinRequest
 
     List<TeamJoinRequest> findAllByMemberOrderByCreatedAtDesc(Member member);
 
-    Optional<TeamJoinRequest> findByMemberAndStatus(Member member, TeamJoinRequestStatus status);
+    // 단건이어야 정상이지만 Optional로 받으면 데이터가 어긋났을 때 조회 자체가 500으로 죽는다.
+    // 목록으로 받아 호출부가 판단하도록 한다.
+    List<TeamJoinRequest> findAllByMemberAndStatus(Member member, TeamJoinRequestStatus status);
 
     void deleteAllByMember(Member member);
 
