@@ -73,6 +73,14 @@ public class TeamJoinRequest extends BaseEntity {
         return status == TeamJoinRequestStatus.PENDING;
     }
 
+    /**
+     * 대기 표시 열이 비어 있는 옛 데이터를 채운다. 제약이 생기기 전에 저장된 행을 보정하는 용도라
+     * {@link PendingJoinRequestBackfill} 외에는 쓰지 않는다.
+     */
+    void restorePendingMarker() {
+        this.pendingMemberId = member.getId();
+    }
+
     /** 상태와 대기 표시 열이 어긋나면 제약이 무의미해지므로 반드시 함께 바꾼다. */
     private void changeStatus(TeamJoinRequestStatus next) {
         this.status = next;

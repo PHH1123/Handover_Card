@@ -15,6 +15,9 @@ public interface TeamJoinRequestRepository extends JpaRepository<TeamJoinRequest
     // 목록으로 받아 호출부가 판단하도록 한다.
     List<TeamJoinRequest> findAllByMemberAndStatus(Member member, TeamJoinRequestStatus status);
 
+    /** 대기 표시 열이 비어 있는 옛 대기 신청. 시작 시 보정 대상이다. */
+    List<TeamJoinRequest> findAllByStatusAndPendingMemberIdIsNullOrderByIdAsc(TeamJoinRequestStatus status);
+
     void deleteAllByMember(Member member);
 
     void deleteAllByTeam(Team team);
