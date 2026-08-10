@@ -27,7 +27,16 @@
             </div>
         </form>
 
-        <p class="muted" style="margin-bottom: 0;">
+        <th:block th:if="${!#lists.isEmpty(socialProviders)}">
+            <div class="divider">또는</div>
+            <div class="social">
+                <a th:each="provider : ${socialProviders}"
+                   th:href="@{/oauth2/authorization/{id}(id=${provider.registrationId})}"
+                   th:text="${provider.displayName} + '(으)로 로그인'">Google로 로그인</a>
+            </div>
+        </th:block>
+
+        <p class="muted" style="margin-top: 1.25rem; margin-bottom: 0;">
             계정이 없나요? <a th:href="@{/web/signup}">회원가입</a>
         </p>
     </div>

@@ -17,6 +17,23 @@ spring:
     multipart:
       max-file-size: 25MB
       max-request-size: 26MB
+  security:
+    oauth2:
+      client:
+        registration:
+          # 클라이언트 ID/시크릿은 각자 발급받는 값이라 저장소에 넣지 않는다. 환경 변수가 없으면
+          # `unset`이 채워지고, 그 공급자는 로그인 화면에 버튼이 뜨지 않는다(SocialLoginProviders).
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:unset}
+            client-secret: ${GOOGLE_CLIENT_SECRET:unset}
+            # openid를 빼서 OIDC 대신 일반 OAuth 2.0 흐름을 쓴다. 그래야 GitHub와 똑같이
+            # "액세스 토큰으로 사용자 정보 엔드포인트 호출" 한 갈래로 처리할 수 있다.
+            scope: profile, email
+          github:
+            client-id: ${GITHUB_CLIENT_ID:unset}
+            client-secret: ${GITHUB_CLIENT_SECRET:unset}
+            # user:email이 있어야 비공개 이메일과 인증 여부를 읽을 수 있다.
+            scope: read:user, user:email
   ai:
     openai:
       api-key: ${OPENAI_API_KEY:}

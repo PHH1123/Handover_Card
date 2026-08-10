@@ -7,6 +7,8 @@ import com.handovercard.auth.dto.LoginRequest;
 import com.handovercard.auth.dto.RefreshRequest;
 import com.handovercard.auth.dto.SignupRequest;
 import com.handovercard.auth.dto.TokenResponse;
+import com.handovercard.auth.oauth2.SocialLoginProviders;
+import com.handovercard.auth.oauth2.SocialMemberOAuth2UserService;
 import com.handovercard.card.HandoverCard;
 import com.handovercard.card.HandoverCardMapper;
 import com.handovercard.card.HandoverCardService;
@@ -16,16 +18,12 @@ import com.handovercard.card.dto.HandoverCardUploadRequest;
 import com.handovercard.common.ResourceNotFoundException;
 import com.handovercard.pipeline.HandoverProcessingPipeline;
 import com.handovercard.security.CustomUserDetails;
-import com.handovercard.security.JwtAuthenticationFilter;
-import com.handovercard.security.JwtProperties;
 import com.handovercard.storage.StorageException;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -50,23 +48,24 @@ import java.util.List;
 @RequestMapping("/web")
 public class WebController {
 
-    private static final String REFRESH_TOKEN_COOKIE = "refreshToken";
     private static final int PAGE_SIZE = 20;
 
     private final AuthService authService;
     private final HandoverCardService handoverCardService;
     private final HandoverCardMapper handoverCardMapper;
     private final HandoverProcessingPipeline processingPipeline;
-    private final JwtProperties jwtProperties;
+    private final AuthTokenCookies authTokenCookies;
+    private final SocialLoginProviders socialLoginProviders;
 
     public WebController(AuthService authService, HandoverCardService handoverCardService,
                           HandoverCardMapper handoverCardMapper, HandoverProcessingPipeline processingPipeline,
-                          JwtProperties jwtProperties) {
+                          AuthTokenCookies authTokenCookies, SocialLoginProviders socialLoginProviders) {
         this.authService = authService;
         this.handoverCardService = handoverCardService;
         this.handoverCardMapper = handoverCardMapper;
         this.processingPipeline = processingPipeline;
-        this.jwtProperties = jwtProperties;
+        this.authTokenCookies = authTokenCookies;
+        this.socialLoginProviders = socialLoginProviders;
     }
 
     @GetMapping
@@ -82,10 +81,15 @@ public class WebController {
     // ---------- 인증 ----------
 
     @GetMapping("/login")
-    public String loginForm(@RequestParam(required = false) String registered, Model model) {
+    public String loginForm(@RequestParam(required = false) String registered,
+                             @RequestParam(required = false) String error, Model model) {
         if (registered != null) {
             model.addAttribute("message", "가입이 완료되었습니다. 로그인해 주세요.");
         }
+        if (error != null) {
+            model.addAttribute("error", socialLoginErrorMessage(error));
+        }
+        model.addAttribute("socialProviders", socialLoginProviders.configured());
         return "login";
     }
 
@@ -94,13 +98,22 @@ public class WebController {
                          HttpServletResponse response, Model model) {
         try {
             TokenResponse tokens = authService.login(new LoginRequest(email, password));
-            setTokenCookies(response, tokens);
+            authTokenCookies.write(response, tokens);
         } catch (InvalidCredentialsException e) {
             model.addAttribute("error", "이메일 또는 비밀번호가 올바르지 않습니다.");
             model.addAttribute("email", email);
+            model.addAttribute("socialProviders", socialLoginProviders.configured());
             return "login";
         }
         return "redirect:/web/cards";
+    }
+
+    /** 소셜 로그인 실패 사유는 코드로만 넘어온다. 화면에 띄우는 문구는 서버가 정한 것만 쓴다. */
+    private String socialLoginErrorMessage(String errorCode) {
+        if (SocialMemberOAuth2UserService.UNVERIFIED_EMAIL.equals(errorCode)) {
+            return "소셜 계정의 이메일을 확인할 수 없습니다. 공급자에서 이메일 인증을 마친 뒤 다시 시도해 주세요.";
+        }
+        return "소셜 로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.";
     }
 
     @GetMapping("/signup")
@@ -123,12 +136,12 @@ public class WebController {
     }
 
     @PostMapping("/logout")
-    public String logout(@CookieValue(value = REFRESH_TOKEN_COOKIE, required = false) String refreshToken,
+    public String logout(@CookieValue(value = AuthTokenCookies.REFRESH_TOKEN_COOKIE, required = false) String refreshToken,
                           HttpServletResponse response) {
         if (refreshToken != null) {
             authService.logout(new RefreshRequest(refreshToken));
         }
-        clearTokenCookies(response);
+        authTokenCookies.clear(response);
         return "redirect:/web/login";
     }
 
@@ -219,26 +232,4 @@ public class WebController {
         model.addAttribute("memberName", principal.getMember().getName());
     }
 
-    private void setTokenCookies(HttpServletResponse response, TokenResponse tokens) {
-        addCookie(response, JwtAuthenticationFilter.ACCESS_TOKEN_COOKIE, tokens.accessToken(),
-                jwtProperties.accessTokenValiditySeconds());
-        addCookie(response, REFRESH_TOKEN_COOKIE, tokens.refreshToken(),
-                jwtProperties.refreshTokenValiditySeconds());
-    }
-
-    private void clearTokenCookies(HttpServletResponse response) {
-        addCookie(response, JwtAuthenticationFilter.ACCESS_TOKEN_COOKIE, "", 0);
-        addCookie(response, REFRESH_TOKEN_COOKIE, "", 0);
-    }
-
-    private void addCookie(HttpServletResponse response, String name, String value, long maxAgeSeconds) {
-        ResponseCookie cookie = ResponseCookie.from(name, value)
-                .httpOnly(true)
-                .path("/")
-                .maxAge(maxAgeSeconds)
-                // CSRF가 꺼져 있는 상태에서 쿠키 인증을 쓰므로 크로스 사이트 전송을 막아 둔다
-                .sameSite("Lax")
-                .build();
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
-    }
 }

@@ -37,6 +37,12 @@
           border-radius: 4px; font-size: .88rem; margin: 0; }
     ul { margin: .25rem 0; padding-left: 1.2rem; font-size: .9rem; }
     .actions { display: flex; gap: .5rem; margin-top: 1rem; }
+    .divider { display: flex; align-items: center; gap: .75rem; margin: 1.25rem 0; color: #7b8794; font-size: .8rem; }
+    .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: #e3e6ea; }
+    .social { display: flex; flex-direction: column; gap: .5rem; }
+    .social a { display: block; padding: .55rem 1rem; border: 1px solid #cbd2d9; border-radius: 4px;
+                text-align: center; text-decoration: none; color: #1f2933; background: #fff; font-size: .9rem; }
+    .social a:hover { background: #f0f2f4; }
 
     /* 음성 입력 탭 (파일 업로드 / 직접 녹음) */
     .tabs { display: flex; gap: .25rem; border-bottom: 1px solid #e3e6ea; margin-bottom: .75rem; }

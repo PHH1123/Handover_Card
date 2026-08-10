@@ -3,12 +3,15 @@ package com.handovercard.common;
 import com.handovercard.auth.DuplicateEmailException;
 import com.handovercard.auth.InvalidCredentialsException;
 import com.handovercard.auth.InvalidTokenException;
+import com.handovercard.auth.oauth2.SocialLoginException;
+import com.handovercard.auth.oauth2.UnverifiedSocialEmailException;
 import com.handovercard.card.InvalidCardStateException;
 import com.handovercard.storage.StorageException;
 import com.handovercard.team.TeamOperationException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,6 +47,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleInvalidToken(InvalidTokenException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(ApiErrorResponse.of(HttpStatus.UNAUTHORIZED.value(), "Unauthorized", ex.getMessage()));
+    }
+
+    /** 공급자가 이메일을 확인해 주지 않아 계정을 잇지 못한 경우. 자격 증명 문제이므로 401. */
+    @ExceptionHandler({UnverifiedSocialEmailException.class, OAuth2AuthenticationException.class})
+    public ResponseEntity<ApiErrorResponse> handleSocialLoginRejected(RuntimeException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiErrorResponse.of(HttpStatus.UNAUTHORIZED.value(), "Unauthorized", ex.getMessage()));
+    }
+
+    /** 지원하지 않거나 설정되지 않은 공급자, 교환할 수 없는 인가 코드 등 요청 자체가 잘못된 경우. */
+    @ExceptionHandler(SocialLoginException.class)
+    public ResponseEntity<ApiErrorResponse> handleSocialLogin(SocialLoginException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", ex.getMessage()));
     }
 
     @ExceptionHandler(InvalidCardStateException.class)

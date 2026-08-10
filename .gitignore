@@ -7,3 +7,4 @@ data/
 *.iml
 out/
 .DS_Store
+docs/
