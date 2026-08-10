@@ -88,6 +88,15 @@ public class AuthService {
         }
     }
 
+    /**
+     * 이미 신원이 확인된 회원에게 토큰을 발급한다. 소셜 로그인은 비밀번호 확인 단계가 없으므로
+     * 이 문으로 들어온다. 발급 이후의 토큰 수명·회전 규칙은 폼 로그인과 완전히 같다.
+     */
+    @Transactional
+    public TokenResponse issueTokensFor(Member member) {
+        return issueTokens(member);
+    }
+
     private Claims parseRefreshClaims(String token) {
         Claims claims;
         try {

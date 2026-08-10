@@ -10,7 +10,7 @@
 - 음성 파일 업로드 → 전사/번역(`transcription` 패키지, OpenAI `gpt-4o-mini-transcribe`(STT) + `gpt-4o-mini`(번역) 실연동, `transcription.provider=openai`) → 요약(`summarization` 패키지, `gpt-4o-mini`, `summarization.provider=openai`) → 인계 카드 저장
 - 전체 파이프라인은 비동기(`pipeline.HandoverProcessingPipeline`)로 처리되며, 카드의 `status`를 폴링해서 진행 상황을 확인
 - `transcription.TranscriptionService`/`summarization.SummarizationService` 둘 다 `mock`/`openai` provider 스위치로 추상화됨. 기본값(코드 레벨)은 둘 다 `mock`이며, 로컬 실행용 `application.yml`은 `transcription.provider=mock`(테스트 환경 보호) / `summarization.provider=openai`(현행 실동작 유지)로 서로 다르게 설정되어 있음. 테스트 프로필(`application-test.yml`)은 둘 다 `mock`으로 강제해 네트워크 호출 없이 동작. 추후 실시간 Agora RTC 채널 기반 전사 구현체로도 교체 가능 (`transcription.provider=agora`)
-- 회원가입/로그인은 Spring Security + JWT(Access/Refresh) 기반(`member`, `auth`, `security` 패키지). `/api/handover-cards/**`를 포함한 모든 API는 `/api/auth/**`를 제외하고 인증 필요. Refresh Token은 DB(`refresh_tokens`)에 저장되어 재발급 시 회전(rotation)되고, 로그아웃/재사용 시 폐기됨
+- 회원가입/로그인은 Spring Security + JWT(Access/Refresh) 기반(`member`, `auth`, `security` 패키지). `/api/handover-cards/**`를 포함한 모든 API는 `/api/auth/**`를 제외하고 인증 필요. Refresh Token은 DB(`refresh_tokens`)에 저장되어 재발급 시 회전(rotation)되고, 로그아웃/재사용 시 폐기됨. Google/GitHub 소셜 로그인(`auth.oauth2` 패키지)도 지원하며, 공급자 인증이 끝나면 같은 JWT를 발급해 이후 흐름은 로그인 방식을 구분하지 않음 ([소셜 로그인](#소셜-로그인-oauth-20))
 - 카드는 생성자(owner)만 접근 가능한 게 기본이지만, 업로드 시 `receiverEmail`이 가입된 회원 이메일과 일치하면 그 회원도 조회 가능 (미가입 이메일이면 조용히 무시되고 카드 생성은 그대로 성공). `GET /api/handover-cards`로 본인이 owner이거나 receiver인 카드 전체 목록 조회 가능
 
 ## 실행 방법
@@ -65,7 +65,7 @@ API를 직접 호출하지 않고 브라우저에서 전체 기능을 확인할 
 | --- | --- |
 | `/` | `/web/cards`로 리다이렉트 |
 | `/web/signup` | 회원가입 |
-| `/web/login` | 로그인 (액세스/리프레시 토큰을 HttpOnly 쿠키로 발급) |
+| `/web/login` | 로그인 (액세스/리프레시 토큰을 HttpOnly 쿠키로 발급). 설정된 경우 Google/GitHub 로그인 버튼도 표시 |
 | `/web/cards` | 음성 업로드 폼 + 내가 접근 가능한 카드 목록(페이지네이션) |
 | `/web/cards/{id}` | 카드 상세 (전사/번역/요약, 삭제, FAILED일 때 재처리) |
 
@@ -89,6 +89,69 @@ REST API와 동일한 서비스 계층·JWT를 그대로 사용하며, 브라우
 
 로컬에서 OpenAI 호출 없이 화면만 확인하려면 `TRANSCRIPTION_PROVIDER=mock SUMMARIZATION_PROVIDER=mock`으로 실행하세요.
 
+## 소셜 로그인 (OAuth 2.0)
+
+Google·GitHub 계정으로 로그인할 수 있습니다. 인증이 끝나면 **이메일/비밀번호 로그인과 똑같은 JWT
+Access/Refresh Token**을 발급하므로, 그 뒤의 화면과 API는 로그인 방식을 구분하지 않습니다.
+
+| 흐름 | 시작점 | 설명 |
+| --- | --- | --- |
+| 브라우저 | `GET /oauth2/authorization/{google\|github}` | 로그인 화면의 버튼. 공급자에 다녀온 뒤 토큰 쿠키를 심고 `/web/cards`로 이동 |
+| API 클라이언트 | `POST /api/auth/oauth2/{google\|github}` | 클라이언트가 받아 온 인가 코드를 넘기면 토큰을 JSON으로 반환 |
+
+두 흐름 모두 클라이언트 시크릿은 서버 밖으로 나가지 않는 Authorization Code 방식이며, 토큰 교환과
+회원 연동 코드는 한 곳(`auth.oauth2`)을 공유합니다.
+
+### 계정 연동 규칙
+
+1. 이미 연결된 소셜 계정이면 그 회원으로 로그인합니다. 공급자가 알려주는 이메일이 나중에 바뀌어도
+   불변 식별자(Google `sub`, GitHub `id`)로 찾으므로 계정이 갈라지지 않습니다.
+2. 처음 보는 소셜 계정인데 같은 이메일의 회원이 있으면 그 회원에 연결합니다.
+3. 회원도 없으면 비밀번호 없는 회원을 새로 만듭니다.
+
+2·3번은 **공급자가 소유를 확인해 준 이메일일 때만** 합니다(Google `email_verified`, GitHub의 주 이메일 +
+`verified`). 확인되지 않은 이메일을 믿으면 남의 주소를 적어 둔 소셜 계정으로 기존 회원에 올라탈 수 있기
+때문입니다. GitHub은 `/user` 응답의 이메일이 비공개이거나 확인 여부를 알려주지 않아 `user:email` 스코프로
+`/user/emails`를 한 번 더 호출합니다.
+
+연결 정보는 `social_accounts` 테이블에 쌓이며 한 회원이 Google과 GitHub을 모두 연결할 수 있습니다.
+소셜로만 가입한 회원은 `members.password`가 비어 있어 이메일/비밀번호 로그인은 할 수 없습니다.
+
+### 설정
+
+클라이언트 ID/시크릿은 각자 발급받는 값이라 저장소에 넣지 않았습니다. **환경 변수를 넣지 않아도
+애플리케이션은 그대로 뜨고, 설정하지 않은 공급자는 로그인 화면에 버튼이 나오지 않습니다.**
+
+```bash
+export GOOGLE_CLIENT_ID=...
+export GOOGLE_CLIENT_SECRET=...
+export GITHUB_CLIENT_ID=...
+export GITHUB_CLIENT_SECRET=...
+```
+
+> 쓰지 않을 공급자는 **변수 자체를 정의하지 마세요.** `GOOGLE_CLIENT_ID=`처럼 빈 값으로 두면
+> Spring이 `Client id must not be empty`로 기동에 실패합니다(`.env`에서는 줄째로 주석 처리).
+
+발급받는 곳과 등록할 리다이렉트 URI(브라우저 흐름 기준)는 다음과 같습니다.
+
+| 공급자 | 발급 | 리다이렉트 URI |
+| --- | --- | --- |
+| Google | [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → 사용자 인증 정보 → OAuth 클라이언트 ID(웹 애플리케이션) | `http://localhost:8080/login/oauth2/code/google` |
+| GitHub | [GitHub Settings](https://github.com/settings/developers) → Developer settings → OAuth Apps | `http://localhost:8080/login/oauth2/code/github` |
+
+배포 시에는 같은 경로의 실제 도메인(HTTPS)을 리다이렉트 URI로 추가 등록해야 합니다.
+
+> **기존 DB가 있다면 한 번 실행해야 하는 마이그레이션이 있습니다.** 소셜 전용 회원은 비밀번호가 없어
+> `members.password`가 NULL을 허용해야 하는데, `ddl-auto=update`는 이미 만들어진 열의 NOT NULL 제약을
+> 풀어 주지 않습니다. 새로 만든 DB는 해당 없습니다.
+>
+> ```sql
+> ALTER TABLE members MODIFY password VARCHAR(255) NULL;
+> ```
+
+Google은 `openid`를 뺀 `profile`, `email` 스코프만 요청합니다. OIDC 대신 일반 OAuth 2.0 흐름이 되어
+"액세스 토큰으로 사용자 정보 엔드포인트 호출"이라는 한 갈래로 GitHub과 같은 코드를 태울 수 있기 때문입니다.
+
 ## API
 
 애플리케이션 실행 후 아래에서 전체 API 문서(Swagger UI)를 확인할 수 있습니다. 우측 상단 Authorize 버튼에
@@ -103,6 +166,8 @@ REST API와 동일한 서비스 계층·JWT를 그대로 사용하며, 브라우
 - `POST /api/auth/login` (JSON: `email`, `password`) → `{ accessToken, refreshToken, tokenType, expiresInSeconds }`
 - `POST /api/auth/refresh` (JSON: `refreshToken`) → 새 Access/Refresh Token 쌍 (기존 refresh token은 즉시 폐기됨)
 - `POST /api/auth/logout` (JSON: `refreshToken`) → 204 No Content, 해당 refresh token 폐기
+- `GET /api/auth/oauth2/providers` → 이 서버에 설정된 소셜 로그인 공급자 목록 (`provider`, `authorizationUri`, `clientId`, `scopes`)
+- `POST /api/auth/oauth2/{provider}` (JSON: `code`, `redirectUri`) → 로그인과 같은 형태의 Access/Refresh Token
 
 ```bash
 curl -s -X POST http://localhost:8080/api/auth/signup \
@@ -112,6 +177,16 @@ curl -s -X POST http://localhost:8080/api/auth/signup \
 curl -s -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"alex@example.com","password":"password123"}'
+```
+
+소셜 로그인은 클라이언트가 공급자에게 받은 인가 코드를 넘기면 서버가 토큰 교환까지 마치고 우리 토큰을
+돌려주는 방식입니다. `redirectUri`는 인가 코드를 받을 때 쓴 값과 **똑같아야** 하며, `state` 검증은 인가
+요청을 만든 클라이언트가 직접 해야 합니다(서버는 그 코드가 어느 요청에서 왔는지 알 수 없습니다).
+
+```bash
+curl -s -X POST http://localhost:8080/api/auth/oauth2/google \
+  -H "Content-Type: application/json" \
+  -d '{"code":"4/0Ab_5qlk...","redirectUri":"https://app.example.com/oauth2/callback"}'
 ```
 
 ### 인계 카드 (`/api/handover-cards/**`, `Authorization: Bearer <accessToken>` 필요)
