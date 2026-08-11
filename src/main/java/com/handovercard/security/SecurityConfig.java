@@ -108,7 +108,15 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        // API 명세는 공개해 두기로 한 선택이다. 인증 없이는 데이터에 닿지 못하고,
+                        // 문서를 열어 두는 편의가 명세가 알려지는 것보다 크다고 봤다.
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
+                        // 404는 /error로 넘어가는데 그 경로가 인증 대상이면 401로 바뀐다. 그래서
+                        // 공개 경로를 오타로 친 /swagger-ui 같은 요청이 "주소가 틀렸다"가 아니라
+                        // "권한이 없다"로 보여 엉뚱한 곳을 뒤지게 만든다. 위에서 열어 둔 접두사
+                        // 아래에서만 효과가 있고, 아무 데도 걸리지 않는 경로는 그대로 401이다
+                        // (인증 없이 경로 존재 여부를 알려 줄 이유가 없으니 그게 맞다).
+                        .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

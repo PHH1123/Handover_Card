@@ -31,12 +31,60 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
 ```bash
 sudo cp deploy/handover-card.env.example /etc/handover-card.env
+sudo chown $USER:$USER /etc/handover-card.env
 sudo chmod 600 /etc/handover-card.env
-sudo vi /etc/handover-card.env      # 값 채우기
+vi /etc/handover-card.env      # 값 채우기
 ```
 
+소유자를 root로 두면 배포할 때 `open /etc/handover-card.env: permission denied`가 난다. `--env-file`은
+도커 데몬이 아니라 **도커 CLI가 읽으므로** 명령을 실행하는 사용자에게 읽기 권한이 필요하다.
+
 `JWT_SECRET`은 `openssl rand -base64 48`로 만든다. S3 액세스 키는 넣지 않는다 — EC2에 IAM Role을
-붙이면 SDK가 알아서 쓴다.
+붙이면 SDK가 알아서 쓴다(다음 절).
+
+`DB_URL`에는 RDS **엔드포인트**를 쓴다. 콘솔에 같이 보이는 ARN(`arn:aws:rds:...`)은 리소스 식별자일
+뿐 접속 주소가 아니라서, 넣으면 호스트를 찾지 못해 기동에 실패한다.
+
+## 3-1. S3 접근 권한 (IAM Role)
+
+역할을 **만드는 것**과 인스턴스에 **붙이는 것**은 별개 작업이다. 만들기만 하고 붙이지 않으면 앱은
+정상 기동하고 업로드할 때만 "Failed to store audio file"로 실패한다.
+
+1. IAM → 정책 생성. 앱이 실제로 쓰는 연산만 준다(`HeadObject`는 `s3:GetObject`로 인가된다):
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [{
+       "Effect": "Allow",
+       "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+       "Resource": "arn:aws:s3:::버킷이름/*"
+     }]
+   }
+   ```
+
+2. IAM → 역할 생성 → 신뢰할 수 있는 엔터티 **AWS 서비스 / EC2** → 위 정책 연결
+3. **EC2 콘솔 → 인스턴스 → 작업 → 보안 → IAM 역할 수정 → 역할 선택** ← 이 단계를 빠뜨리기 쉽다
+
+붙었는지 확인 (EC2에서, 컨테이너 밖):
+
+```bash
+TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/iam/security-credentials/; echo
+```
+
+역할 이름이 나오면 정상이고, `404`가 나오면 붙지 않은 것이다. 컨테이너 쪽도 같이 확인한다:
+
+```bash
+docker run --rm amazon/aws-cli sts get-caller-identity
+```
+
+> 위는 되는데 이것만 실패하면 **IMDS 홉 제한** 문제다. 인스턴스 메타데이터의 기본 홉 제한이 1인데
+> 컨테이너에서 나가는 요청은 도커 브리지를 한 번 더 거쳐 2가 되어 차단된다. EC2 콘솔 → 작업 →
+> 인스턴스 설정 → 인스턴스 메타데이터 옵션 수정 → **응답 홉 제한 2**로 바꾸면 된다.
+
+> 권한 확인은 `aws s3 ls`가 아니라 `aws s3api put-object`로 한다. 위 정책에는 목록 조회(`ListBucket`)가
+> 없어서, 권한이 멀쩡해도 `s3 ls`는 `AccessDenied`가 난다.
 
 ## 3. DB 준비
 
@@ -47,9 +95,16 @@ RDS MySQL 8.0 권장. 기존 DB를 옮겨 오는 경우 아래를 먼저 실행�
 ALTER TABLE members MODIFY password VARCHAR(255) NULL;
 ```
 
-**새 DB라면 최초 1회만** `/etc/handover-card.env`의 `JPA_DDL_AUTO=update` 주석을 풀고 배포해서
-스키마를 만든 뒤, 다시 주석 처리하고 재배포한다. 이 값을 켜 둔 채로 운영하면 엔티티를 고칠 때마다
-스키마가 말없이 바뀐다.
+**새 DB라면 최초 1회만** `/etc/handover-card.env`의 `SPRING_JPA_HIBERNATE_DDL_AUTO=update` 주석을 풀고
+배포해서 스키마를 만든 뒤, 다시 주석 처리하고 재배포한다. 이 값을 켜 둔 채로 운영하면 엔티티를
+고칠 때마다 스키마가 말없이 바뀐다.
+
+`#`을 확실히 지웠는지 확인할 것. 남아 있으면 도커가 그 줄을 건너뛰어 `validate`로 뜨고,
+`Schema validation: missing table [...]`로 기동에 실패한다. 실제로 전달됐는지는 이렇게 본다:
+
+```bash
+docker run --rm --env-file /etc/handover-card.env alpine sh -c 'echo "[$SPRING_JPA_HIBERNATE_DDL_AUTO]"'
+```
 
 ## 4. 첫 배포
 
