@@ -18,9 +18,11 @@ public class AuthTokenCookies {
     public static final String REFRESH_TOKEN_COOKIE = "refreshToken";
 
     private final JwtProperties jwtProperties;
+    private final CookieProperties cookieProperties;
 
-    public AuthTokenCookies(JwtProperties jwtProperties) {
+    public AuthTokenCookies(JwtProperties jwtProperties, CookieProperties cookieProperties) {
         this.jwtProperties = jwtProperties;
+        this.cookieProperties = cookieProperties;
     }
 
     public void write(HttpServletResponse response, TokenResponse tokens) {
@@ -38,6 +40,8 @@ public class AuthTokenCookies {
     private void add(HttpServletResponse response, String name, String value, long maxAgeSeconds) {
         ResponseCookie cookie = ResponseCookie.from(name, value)
                 .httpOnly(true)
+                // HTTPS 환경에서 켠다(운영 프로파일 기본값). 켜면 평문 연결로는 토큰이 나가지 않는다.
+                .secure(cookieProperties.secure())
                 .path("/")
                 .maxAge(maxAgeSeconds)
                 // CSRF가 꺼져 있는 상태에서 쿠키 인증을 쓰므로 크로스 사이트 전송을 막아 둔다.

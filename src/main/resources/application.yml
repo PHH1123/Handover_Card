@@ -60,6 +60,11 @@ handover:
       access-key: ${S3_ACCESS_KEY:handover}
       secret-key: ${S3_SECRET_KEY:handover-secret}
       path-style-access: ${S3_PATH_STYLE:true}
+  web:
+    cookie:
+      # 로컬 개발은 HTTP라 꺼 둔다. 켜면 브라우저가 쿠키를 보내지 않아 로그인이 되지 않는다.
+      # 운영(HTTPS)에서는 application-prod.yml이 켠다.
+      secure: ${COOKIE_SECURE:false}
   async:
     core-pool-size: 2
     max-pool-size: 5
