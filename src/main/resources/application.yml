@@ -61,6 +61,11 @@ handover:
       secret-key: ${S3_SECRET_KEY:handover-secret}
       path-style-access: ${S3_PATH_STYLE:true}
   web:
+    cors:
+      # 브라우저에서 API를 직접 부르는 프론트엔드 주소. 쉼표로 구분한다.
+      # 예: CORS_ALLOWED_ORIGINS=http://localhost:5173,https://www.handover-card.o-r.kr
+      # 비워 두면 CORS 헤더를 붙이지 않는다(화면과 API가 같은 서버일 때는 필요 없다).
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:}
     cookie:
       # 로컬 개발은 HTTP라 꺼 둔다. 켜면 브라우저가 쿠키를 보내지 않아 로그인이 되지 않는다.
       # 운영(HTTPS)에서는 application-prod.yml이 켠다.
