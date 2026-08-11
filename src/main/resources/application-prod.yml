@@ -1,0 +1,85 @@
+# 운영 프로파일. application.yml의 로컬 기본값을 덮어쓴다.
+#
+# 기본값을 일부러 비워 둔 값들(DB_URL, JWT_SECRET 등)은 미설정 시 기동이 실패한다.
+# 로컬 기본값을 물고 조용히 뜨는 것보다 못 뜨는 쪽이 안전하기 때문이다.
+
+spring:
+  datasource:
+    # 예: jdbc:mysql://db.internal:3306/handover_card?useSSL=true&serverTimezone=UTC
+    # serverTimezone=UTC를 빼면 저장된 시각이 DB 서버 타임존을 따라 흔들린다.
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      connection-timeout: 3000
+
+  jpa:
+    hibernate:
+      # 운영에서는 엔티티 변경이 스키마를 말없이 바꾸지 못하게 막는다.
+      # 스키마가 없는 첫 배포에서만 JPA_DDL_AUTO=update로 한 번 띄워 만들고, 이후 다시 validate로 되돌린다.
+      ddl-auto: ${JPA_DDL_AUTO:validate}
+    open-in-view: false
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+
+server:
+  port: ${SERVER_PORT:8080}
+  # 배포 중 처리 중이던 파이프라인 작업을 끝낼 시간을 준다. 파이프라인이 인메모리 스레드풀이라
+  # 이걸 켜지 않으면 재시작 때 카드가 PROCESSING 상태로 남는다.
+  shutdown: graceful
+  # 리버스 프록시(ALB/nginx) 뒤에서 X-Forwarded-* 를 신뢰한다.
+  # 없으면 OAuth 리다이렉트 URI가 http:// 로 만들어져 소셜 로그인이 실패한다.
+  forward-headers-strategy: framework
+
+spring.lifecycle:
+  timeout-per-shutdown-phase: 30s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # 헬스체크만 연다. SecurityConfig에서 permitAll인 경로도 /actuator/health 하나뿐이다.
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+handover:
+  web:
+    cookie:
+      # 운영은 HTTPS 전제. 끄면 인증 토큰이 평문 연결로도 전송된다.
+      secure: true
+  storage:
+    provider: s3
+    s3:
+      # 이 두 값이 비었거나 환경변수가 주입되지 않으면 S3ClientConfig가 기동 시점에 막는다.
+      bucket: ${S3_BUCKET}
+      region: ${S3_REGION}
+      # 실제 AWS S3를 쓰므로 엔드포인트를 비운다(비어 있으면 SDK 기본 엔드포인트).
+      endpoint: ""
+      # 비워 두면 인스턴스 역할 등 SDK 기본 자격증명 체인을 탄다. 서버에 키를 심지 않는다.
+      access-key: ""
+      secret-key: ""
+      # 경로 방식은 MinIO 때문에 필요했던 것이고, 실제 S3에서는 끈다.
+      path-style-access: false
+
+# 기본 프로파일은 transcription이 mock이다. 운영에서 가짜 전사 결과가 나가지 않도록 openai로 되돌린다.
+transcription:
+  provider: ${TRANSCRIPTION_PROVIDER:openai}
+
+summarization:
+  provider: ${SUMMARIZATION_PROVIDER:openai}
+
+jwt:
+  # 기본값 없음 — 개발용 키로 운영 토큰이 서명되면 누구나 위조할 수 있다.
+  secret: ${JWT_SECRET}
+  access-token-validity-seconds: ${JWT_ACCESS_TOKEN_VALIDITY_SECONDS:1800}
+  refresh-token-validity-seconds: ${JWT_REFRESH_TOKEN_VALIDITY_SECONDS:1209600}
+
+logging:
+  level:
+    root: INFO
+    com.handovercard: INFO
