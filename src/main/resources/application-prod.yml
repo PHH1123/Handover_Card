@@ -17,8 +17,9 @@ spring:
   jpa:
     hibernate:
       # 운영에서는 엔티티 변경이 스키마를 말없이 바꾸지 못하게 막는다.
-      # 스키마가 없는 첫 배포에서만 JPA_DDL_AUTO=update로 한 번 띄워 만들고, 이후 다시 validate로 되돌린다.
-      ddl-auto: ${JPA_DDL_AUTO:validate}
+      # 스키마가 없는 첫 배포에서만 환경변수 SPRING_JPA_HIBERNATE_DDL_AUTO=update 로 한 번 띄워
+      # 만들고, 그 줄을 지워 validate로 되돌린다. 환경변수가 이 값보다 우선한다.
+      ddl-auto: validate
     open-in-view: false
 
   ai:
