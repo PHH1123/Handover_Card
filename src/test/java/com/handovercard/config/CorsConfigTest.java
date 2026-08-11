@@ -16,7 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@TestPropertySource(properties = "handover.web.cors.allowed-origins=http://localhost:5173")
+@TestPropertySource(properties =
+        "handover.web.cors.allowed-origins=http://localhost:[*],https://www.handover-card.o-r.kr")
 class CorsConfigTest {
 
     private static final String ORIGIN = "http://localhost:5173";
@@ -36,6 +37,42 @@ class CorsConfigTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ORIGIN))
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+    }
+
+    /** 개발 서버 포트는 프레임워크와 실행 상황에 따라 달라지므로 포트를 가리지 않아야 한다. */
+    @Test
+    void 패턴은_localhost의_다른_포트도_받는다() throws Exception {
+        for (String origin : new String[]{"http://localhost:3000", "http://localhost:5174"}) {
+            mockMvc.perform(options("/api/handover-cards")
+                            .header(HttpHeaders.ORIGIN, origin)
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, origin));
+        }
+    }
+
+    /**
+     * 포트만 열어 준 것이지 호스트나 스킴까지 느슨해진 것이 아니다. 패턴을 넣고 나서
+     * 실제로 무엇이 열렸는지 오해하기 쉬운 지점이라 경계를 고정해 둔다.
+     */
+    @Test
+    void 패턴은_호스트와_스킴까지_열어_주지는_않는다() throws Exception {
+        for (String origin : new String[]{"http://127.0.0.1:5173", "https://localhost:5173"}) {
+            mockMvc.perform(options("/api/handover-cards")
+                            .header(HttpHeaders.ORIGIN, origin)
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
+    void 정확한_주소도_그대로_동작한다() throws Exception {
+        String origin = "https://www.handover-card.o-r.kr";
+        mockMvc.perform(options("/api/handover-cards")
+                        .header(HttpHeaders.ORIGIN, origin)
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, origin));
     }
 
     @Test
