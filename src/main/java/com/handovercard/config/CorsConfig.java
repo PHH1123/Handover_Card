@@ -27,7 +27,13 @@ public class CorsConfig {
         }
 
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(props.allowedOrigins());
+        // 정확한 주소와 패턴을 모두 받는다. 로컬 개발 서버는 프레임워크마다 포트가 달라
+        // (Vite 5173, Next 3000, 이미 쓰이면 그다음 번호) 하나씩 열어 주려면 그때마다 배포해야
+        // 하는데, http://localhost:[*] 한 줄이면 그 왕복이 없어진다.
+        //
+        // 패턴은 로컬 개발용으로만 쓸 것. 운영 주소를 https://*.도메인 같은 형태로 열면
+        // 서브도메인을 하나라도 남에게 내주는 순간 그대로 통과된다.
+        config.setAllowedOriginPatterns(props.allowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         // 쿠키로도 인증할 수 있게 열어 둔다. 이 값이 켜져 있으면 출처에 "*"를 쓸 수 없어서
