@@ -32,6 +32,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -47,6 +49,8 @@ import java.util.List;
 @Controller
 @RequestMapping("/web")
 public class WebController {
+
+    private static final Logger log = LoggerFactory.getLogger(WebController.class);
 
     private static final int PAGE_SIZE = 20;
 
@@ -212,6 +216,12 @@ public class WebController {
 
     @ExceptionHandler({ResourceNotFoundException.class, InvalidCardStateException.class, StorageException.class})
     public String handleCardError(Exception e, RedirectAttributes redirectAttributes) {
+        // 저장소 오류만 원인을 남긴다. 화면에는 "Failed to store audio file"만 뜨는데, 그 아래
+        // 깔린 실제 이유(자격증명 없음, 권한 거부, 리전 불일치)는 여기서 찍지 않으면 사라진다.
+        // 나머지 둘은 사용자가 잘못된 카드를 열었을 때 나는 것이라 로그를 남길 가치가 없다.
+        if (e instanceof StorageException) {
+            log.error("Audio storage failed", e);
+        }
         redirectAttributes.addFlashAttribute("error", e.getMessage());
         return "redirect:/web/cards";
     }

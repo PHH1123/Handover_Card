@@ -9,6 +9,8 @@ import com.handovercard.card.InvalidCardStateException;
 import com.handovercard.storage.StorageException;
 import com.handovercard.team.TeamOperationException;
 import jakarta.validation.ConstraintViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -24,6 +26,8 @@ import java.util.List;
 // SSR 화면(@Controller)의 예외까지 JSON으로 바꿔버리지 않도록 REST 컨트롤러로만 범위를 제한한다.
 @RestControllerAdvice(annotations = RestController.class)
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleNotFound(ResourceNotFoundException ex) {
@@ -90,8 +94,14 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", ex.getMessage()));
     }
 
+    /**
+     * 저장소 오류는 원인을 함께 남긴다. 응답에 담기는 건 "Failed to store audio file" 같은 문구뿐이라,
+     * 여기서 로깅하지 않으면 그 아래에 있던 실제 이유(자격증명 없음, 권한 거부, 리전 불일치)가
+     * 통째로 사라져 서버에서 볼 방법이 없어진다.
+     */
     @ExceptionHandler(StorageException.class)
     public ResponseEntity<ApiErrorResponse> handleStorage(StorageException ex) {
+        log.error("Audio storage failed", ex);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", ex.getMessage()));
     }
@@ -108,8 +118,14 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", "Malformed multipart request"));
     }
 
+    /**
+     * 여기까지 온 예외는 우리가 예상하지 못한 것들이다. 응답은 "Unexpected error occurred" 한 줄로
+     * 덮어 클라이언트에 내부 사정을 흘리지 않되, 서버에는 반드시 남긴다. 로깅하지 않으면 500이
+     * 났다는 사실 말고는 아무것도 알 수 없어 원인을 재현으로만 찾아야 한다.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleUnexpected(Exception ex) {
+        log.error("Unhandled exception", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiErrorResponse.of(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Internal Server Error", "Unexpected error occurred"));
     }
