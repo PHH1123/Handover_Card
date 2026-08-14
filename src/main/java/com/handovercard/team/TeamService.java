@@ -91,6 +91,25 @@ public class TeamService {
         getPendingRequestLedBy(requestId, leaderId).reject();
     }
 
+    /**
+     * 내가 낸 대기 중인 신청을 철회한다. 거절과 달리 기록을 남기지 않고 지운다.
+     * 본인이 없던 일로 만든 신청이라 내역에 남길 이유가 없고, 지우면 대기 표시 열도 함께 사라져
+     * 곧바로 다른 팀에 신청할 수 있다.
+     */
+    @Transactional
+    public void cancelMyRequest(Long requestId, Long memberId) {
+        TeamJoinRequest request = joinRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Team join request not found: " + requestId));
+        if (!request.getMember().getId().equals(memberId)) {
+            // 404, not 403 — 남이 낸 신청이 존재한다는 사실 자체를 알리지 않는다
+            throw new ResourceNotFoundException("Team join request not found: " + requestId);
+        }
+        if (!request.isPending()) {
+            throw new TeamOperationException("이미 처리된 신청은 취소할 수 없습니다.");
+        }
+        joinRequestRepository.delete(request);
+    }
+
     /** 팀장을 같은 팀의 다른 팀원에게 넘긴다. 넘긴 사람은 일반 팀원으로 남는다. */
     @Transactional
     public void transferLeadership(Long newLeaderId, Long currentLeaderId) {

@@ -110,6 +110,15 @@ public class TeamController {
         return ResponseEntity.ok(teamService.listMyRequests(principal.getMember().getId()));
     }
 
+    @Operation(summary = "가입 신청 취소", description = "내가 낸 대기 중인 신청을 철회합니다. 신청 기록은 남지 않아 바로 다시 신청할 수 있습니다. "
+            + "내가 낸 신청이 아니거나 없는 신청이면 404, 이미 승인/거절된 신청이면 409를 반환합니다.")
+    @DeleteMapping("/my-join-requests/{requestId}")
+    public ResponseEntity<Void> cancelMyRequest(@PathVariable Long requestId,
+                                                  @AuthenticationPrincipal CustomUserDetails principal) {
+        teamService.cancelMyRequest(requestId, principal.getMember().getId());
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "가입 신청 승인", description = "팀장만 승인할 수 있습니다. 다른 팀의 신청이거나 없는 신청이면 404, "
             + "이미 처리된 신청이면 409를 반환합니다.")
     @PostMapping("/join-requests/{requestId}/approve")

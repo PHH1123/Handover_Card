@@ -302,6 +302,38 @@ class WebPageRenderingTest {
     }
 
     @Test
+    void anApplicantCanCancelTheirRequestFromTheTeamPage() throws Exception {
+        Session leader = signupAndLogin("cancel-page-leader");
+        Session applicant = signupAndLogin("cancel-page-applicant");
+        Long teamId = createTeam(leader, "cancel-page-team-" + System.nanoTime());
+        applyToTeam(applicant, teamId);
+
+        String waiting = mockMvc.perform(get("/web/teams").cookie(applicant.cookies()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(waiting).contains("신청 취소").contains("/cancel");
+
+        var matcher = java.util.regex.Pattern.compile("/web/teams/requests/(\\d+)/cancel").matcher(waiting);
+        org.assertj.core.api.Assertions.assertThat(matcher.find()).isTrue();
+        MvcResult cancelled = mockMvc.perform(post("/web/teams/requests/{id}/cancel", matcher.group(1))
+                        .cookie(applicant.cookies()))
+                .andExpect(redirectedUrl("/web/teams"))
+                .andReturn();
+
+        String page = followRedirect("/web/teams", applicant, cancelled);
+        org.assertj.core.api.Assertions.assertThat(page)
+                .contains("가입 신청을 취소했습니다")
+                .doesNotContain("승인 대기 중")
+                // 취소는 기록을 남기지 않으므로 신청 내역도 뜨지 않는다
+                .doesNotContain("내 신청 내역");
+
+        // 팀장 화면에서도 사라져야 한다
+        mockMvc.perform(get("/web/teams").cookie(leader.cookies()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("대기 중인 신청이 없습니다")));
+    }
+
+    @Test
     void plainMemberSeesLeaveButNoManageButtons() throws Exception {
         Session leader = signupAndLogin("plain-leader");
         Session member = signupAndLogin("plain-member");
