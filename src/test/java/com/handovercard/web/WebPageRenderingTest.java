@@ -232,6 +232,163 @@ class WebPageRenderingTest {
                 .andExpect(content().string(not(containsString("아직 카드가 없습니다"))));
     }
 
+    /** 파이프라인이 끝나야 결과 수정 폼이 뜨므로 화면이 COMPLETED가 될 때까지 기다린다. */
+    private String awaitCompletedDetailPage(Session session, Long cardId) throws Exception {
+        java.time.Instant deadline = java.time.Instant.now().plusSeconds(20);
+        String page = "";
+        while (java.time.Instant.now().isBefore(deadline)) {
+            page = mockMvc.perform(get("/web/cards/{id}", cardId).cookie(session.cookies()))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+            if (page.contains(">COMPLETED<")) {
+                return page;
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("카드가 20초 안에 COMPLETED가 되지 않았습니다: " + cardId);
+    }
+
+    // ---------- 결과 수정 화면 ----------
+
+    @Test
+    void resultEditFormIsShownToTheOwnerOnceProcessingIsDone() throws Exception {
+        Session owner = signupAndLogin("edit-form");
+        Long cardId = uploadCard(owner);
+
+        String page = awaitCompletedDetailPage(owner, cardId);
+        org.assertj.core.api.Assertions.assertThat(page)
+                .contains("결과 수정")
+                .contains("/web/cards/" + cardId + "/result")
+                .contains("name=\"transcript\"")
+                .contains("name=\"keyPointTarget\"")
+                .contains("name=\"actionItemTarget\"")
+                .contains("name=\"blockerTarget\"");
+    }
+
+    @Test
+    void teammatesSeeTheResultButNotTheEditForm() throws Exception {
+        Session leader = signupAndLogin("edit-leader");
+        Session teammate = signupAndLogin("edit-teammate");
+        Long teamId = createTeam(leader, "edit-team-" + System.nanoTime());
+        joinTeam(teammate, leader, teamId);
+        Long cardId = uploadCard(leader);
+        awaitCompletedDetailPage(leader, cardId);
+
+        mockMvc.perform(get("/web/cards/{id}", cardId).cookie(teammate.cookies()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("요약")))
+                // 수정 폼 자체가 없어야 한다 (문구는 스타일시트 주석에도 나오므로 form action으로 본다)
+                .andExpect(content().string(not(containsString("/web/cards/" + cardId + "/result"))))
+                .andExpect(content().string(not(containsString("name=\"keyPointTarget\""))));
+    }
+
+    @Test
+    void editingTheResultFromTheFormUpdatesThePage() throws Exception {
+        Session owner = signupAndLogin("edit-submit");
+        Long cardId = uploadCard(owner);
+        awaitCompletedDetailPage(owner, cardId);
+
+        MvcResult saved = mockMvc.perform(post("/web/cards/{id}/result", cardId).cookie(owner.cookies())
+                        .param("transcript", "화면에서 고친 전사")
+                        .param("translatedText", "edited from the web")
+                        // 첫 줄은 고치고, 둘째 줄은 새 항목, 셋째 줄은 빈 칸이라 저장되지 않는다
+                        .param("keyPointTarget", "edited key point", "added key point", "")
+                        .param("keyPointSource", "고친 핵심", "추가한 핵심", "")
+                        .param("actionItemTarget", "")
+                        .param("actionItemSource", "")
+                        .param("blockerTarget", "")
+                        .param("blockerSource", ""))
+                .andExpect(redirectedUrl("/web/cards/" + cardId))
+                .andReturn();
+
+        String page = followRedirect("/web/cards/" + cardId, owner, saved);
+        org.assertj.core.api.Assertions.assertThat(page)
+                .contains("결과를 수정했습니다.")
+                .contains("화면에서 고친 전사")
+                .contains("edited from the web")
+                .contains("edited key point")
+                .contains("추가한 핵심");
+    }
+
+    /**
+     * 요약 입력이 하나도 없는 요청은 "요약을 비우라"가 아니다.
+     * 우리 폼은 빈 칸이라도 함께 보내지만, 그렇지 않은 요청에 요약이 통째로 날아가면 안 된다.
+     */
+    @Test
+    void aPostWithoutSummaryInputsLeavesTheSummaryAlone() throws Exception {
+        Session owner = signupAndLogin("edit-keep-summary");
+        Long cardId = uploadCard(owner);
+        awaitCompletedDetailPage(owner, cardId);
+
+        mockMvc.perform(post("/web/cards/{id}/result", cardId).cookie(owner.cookies())
+                        .param("transcript", "전사만 고침")
+                        .param("keyPointTarget", "keep me")
+                        .param("keyPointSource", "남겨야 할 핵심"))
+                .andExpect(redirectedUrl("/web/cards/" + cardId));
+
+        // 요약 파라미터 없이 전사만 보낸다
+        mockMvc.perform(post("/web/cards/{id}/result", cardId).cookie(owner.cookies())
+                        .param("transcript", "전사를 또 고침"))
+                .andExpect(redirectedUrl("/web/cards/" + cardId));
+
+        mockMvc.perform(get("/web/cards/{id}", cardId).cookie(owner.cookies()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("전사를 또 고침")))
+                .andExpect(content().string(containsString("keep me")))
+                .andExpect(content().string(containsString("남겨야 할 핵심")));
+    }
+
+    /** 반대로 빈 칸이 실려 오면(= 폼에서 항목을 모두 지운 경우) 요약은 실제로 비워져야 한다. */
+    @Test
+    void clearingEveryEntryInTheFormEmptiesTheSummary() throws Exception {
+        Session owner = signupAndLogin("edit-clear-summary");
+        Long cardId = uploadCard(owner);
+        awaitCompletedDetailPage(owner, cardId);
+
+        mockMvc.perform(post("/web/cards/{id}/result", cardId).cookie(owner.cookies())
+                        .param("keyPointTarget", "will be gone")
+                        .param("keyPointSource", "사라질 핵심"))
+                .andExpect(redirectedUrl("/web/cards/" + cardId));
+
+        mockMvc.perform(post("/web/cards/{id}/result", cardId).cookie(owner.cookies())
+                        .param("keyPointTarget", "").param("keyPointSource", "")
+                        .param("actionItemTarget", "").param("actionItemSource", "")
+                        .param("blockerTarget", "").param("blockerSource", ""))
+                .andExpect(redirectedUrl("/web/cards/" + cardId));
+
+        mockMvc.perform(get("/web/cards/{id}", cardId).cookie(owner.cookies()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(not(containsString("will be gone"))))
+                .andExpect(content().string(not(containsString("사라질 핵심"))));
+    }
+
+    /** 비워 둔 텍스트 칸은 "지우기"가 아니라 "그대로 두기"로 읽는다. */
+    @Test
+    void submittingTheFormWithEmptyTextKeepsTheExistingText() throws Exception {
+        Session owner = signupAndLogin("edit-keep");
+        Long cardId = uploadCard(owner);
+        awaitCompletedDetailPage(owner, cardId);
+
+        // 먼저 알아볼 수 있는 값으로 고쳐 둔다
+        mockMvc.perform(post("/web/cards/{id}/result", cardId).cookie(owner.cookies())
+                        .param("transcript", "지워지면 안 되는 전사")
+                        .param("translatedText", "must survive"))
+                .andExpect(redirectedUrl("/web/cards/" + cardId));
+
+        // 텍스트를 비운 채 저장해도 앞서 넣은 내용이 남아 있어야 한다
+        mockMvc.perform(post("/web/cards/{id}/result", cardId).cookie(owner.cookies())
+                        .param("transcript", "")
+                        .param("translatedText", "")
+                        .param("keyPointTarget", "")
+                        .param("keyPointSource", ""))
+                .andExpect(redirectedUrl("/web/cards/" + cardId));
+
+        mockMvc.perform(get("/web/cards/{id}", cardId).cookie(owner.cookies()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("지워지면 안 되는 전사")))
+                .andExpect(content().string(containsString("must survive")));
+    }
+
     // ---------- 팀 화면 ----------
 
     @Test

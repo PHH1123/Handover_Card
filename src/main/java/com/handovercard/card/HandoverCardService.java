@@ -2,6 +2,9 @@ package com.handovercard.card;
 
 import tools.jackson.databind.ObjectMapper;
 import com.handovercard.card.dto.HandoverCardUploadRequest;
+import com.handovercard.card.dto.SummaryDto;
+import com.handovercard.card.dto.SummaryEntryDto;
+import com.handovercard.card.dto.UpdateHandoverResultRequest;
 import com.handovercard.common.ResourceNotFoundException;
 import com.handovercard.member.Member;
 import com.handovercard.member.MemberRepository;
@@ -14,6 +17,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+
+import java.util.List;
 
 @Service
 public class HandoverCardService {
@@ -125,6 +130,50 @@ public class HandoverCardService {
         return card;
     }
 
+    /**
+     * 작성자가 AI 결과(전사/번역/요약)를 직접 고친다. 보내지 않은 항목은 그대로 둔다.
+     *
+     * <p>처리가 끝난 카드만 고칠 수 있다. 진행 중인 카드를 고치면 뒤이어 도착한 파이프라인 결과가
+     * 수정을 덮어써, 저장은 성공했는데 내용이 원래대로 돌아가 있는 상황이 된다.
+     */
+    @Transactional
+    public HandoverCard updateResult(Long id, Member requester, UpdateHandoverResultRequest request) {
+        HandoverCard card = getOwned(id, requester);
+        if (card.getStatus() != HandoverStatus.COMPLETED) {
+            throw new InvalidCardStateException("Only completed handover cards can be edited: " + id);
+        }
+        if (request.transcript() != null) {
+            card.setTranscript(request.transcript().strip());
+        }
+        if (request.translatedText() != null) {
+            card.setTranslatedText(request.translatedText().strip());
+        }
+        if (request.summary() != null) {
+            card.setSummaryJson(writeJson(clean(request.summary())));
+        }
+        return card;
+    }
+
+    /** 화면의 빈 입력 칸이 빈 항목으로 저장되지 않도록 걸러내고 앞뒤 공백을 정리한다. */
+    private SummaryDto clean(SummaryDto summary) {
+        return new SummaryDto(cleanEntries(summary.keyPoints()), cleanEntries(summary.actionItems()),
+                cleanEntries(summary.blockers()));
+    }
+
+    private List<SummaryEntryDto> cleanEntries(List<SummaryEntryDto> entries) {
+        if (entries == null) {
+            return List.of();
+        }
+        return entries.stream()
+                .filter(entry -> entry != null && (StringUtils.hasText(entry.source()) || StringUtils.hasText(entry.target())))
+                .map(entry -> new SummaryEntryDto(strip(entry.source()), strip(entry.target())))
+                .toList();
+    }
+
+    private String strip(String value) {
+        return value == null ? null : value.strip();
+    }
+
     private HandoverCard getOwned(Long id, Member requester) {
         HandoverCard card = get(id);
         if (!card.getOwner().getId().equals(requester.getId())) {
@@ -174,6 +223,10 @@ public class HandoverCardService {
     }
 
     private String writeSummaryJson(SummaryResult summary) {
+        return writeJson(summary);
+    }
+
+    private String writeJson(Object summary) {
         try {
             return objectMapper.writeValueAsString(summary);
         } catch (Exception e) {

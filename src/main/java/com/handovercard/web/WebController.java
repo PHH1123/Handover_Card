@@ -15,6 +15,9 @@ import com.handovercard.card.HandoverCardService;
 import com.handovercard.card.InvalidCardStateException;
 import com.handovercard.card.dto.HandoverCardResponse;
 import com.handovercard.card.dto.HandoverCardUploadRequest;
+import com.handovercard.card.dto.SummaryDto;
+import com.handovercard.card.dto.SummaryEntryDto;
+import com.handovercard.card.dto.UpdateHandoverResultRequest;
 import com.handovercard.common.ResourceNotFoundException;
 import com.handovercard.pipeline.HandoverProcessingPipeline;
 import com.handovercard.security.CustomUserDetails;
@@ -40,7 +43,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 기능 확인용 서버 사이드 렌더링 화면. REST API와 같은 서비스 계층을 그대로 호출하며,
@@ -197,6 +203,66 @@ public class WebController {
             default -> true;
         });
         return "card-detail";
+    }
+
+    /**
+     * 결과 수정 폼. 요약 항목은 줄 수가 정해져 있지 않아 같은 이름의 입력 칸을 여러 개 보내고,
+     * 여기서 번역/원문 목록을 같은 순서로 짝지어 되돌린다.
+     */
+    @PostMapping("/cards/{id}/result")
+    public String updateResult(@PathVariable Long id,
+                                @RequestParam(required = false) String transcript,
+                                @RequestParam(required = false) String translatedText,
+                                @RequestParam(name = "keyPointTarget", required = false) List<String> keyPointTargets,
+                                @RequestParam(name = "keyPointSource", required = false) List<String> keyPointSources,
+                                @RequestParam(name = "actionItemTarget", required = false) List<String> actionItemTargets,
+                                @RequestParam(name = "actionItemSource", required = false) List<String> actionItemSources,
+                                @RequestParam(name = "blockerTarget", required = false) List<String> blockerTargets,
+                                @RequestParam(name = "blockerSource", required = false) List<String> blockerSources,
+                                @AuthenticationPrincipal CustomUserDetails principal,
+                                RedirectAttributes redirectAttributes) {
+        boolean summarySubmitted = anyPresent(keyPointTargets, keyPointSources, actionItemTargets,
+                actionItemSources, blockerTargets, blockerSources);
+        // 요약 입력이 하나도 오지 않았다면 "요약을 비우라"가 아니라 "요약은 건드리지 않는다"로 읽는다.
+        // 화면의 폼은 항목이 없어도 빈 입력 칸을 함께 보내므로, 여기 걸리는 건 폼을 거치지 않은 요청뿐이다.
+        // 구역 단위로는 구분하지 않는다 — 요약은 통째로 교체하는 값이라 한 구역만 남길 방법이 없다.
+        SummaryDto summary = summarySubmitted
+                ? new SummaryDto(
+                        zipEntries(keyPointTargets, keyPointSources),
+                        zipEntries(actionItemTargets, actionItemSources),
+                        zipEntries(blockerTargets, blockerSources))
+                : null;
+        // 폼은 빈 칸도 함께 보내므로, 비워 둔 텍스트는 "지우기"가 아니라 "그대로 두기"로 읽는다
+        handoverCardService.updateResult(id, principal.getMember(),
+                new UpdateHandoverResultRequest(blankToNull(transcript), blankToNull(translatedText), summary));
+
+        redirectAttributes.addFlashAttribute("message", "결과를 수정했습니다.");
+        return "redirect:/web/cards/" + id;
+    }
+
+    @SafeVarargs
+    private boolean anyPresent(List<String>... inputs) {
+        return Arrays.stream(inputs).anyMatch(Objects::nonNull);
+    }
+
+    /** 같은 순서로 온 번역/원문 입력을 항목 하나로 합친다. 둘 다 빈 줄은 저장 단계에서 걸러진다. */
+    private List<SummaryEntryDto> zipEntries(List<String> targets, List<String> sources) {
+        List<String> safeTargets = targets != null ? targets : List.of();
+        List<String> safeSources = sources != null ? sources : List.of();
+        int size = Math.max(safeTargets.size(), safeSources.size());
+        List<SummaryEntryDto> entries = new ArrayList<>();
+        for (int i = 0; i < size; i++) {
+            entries.add(new SummaryEntryDto(valueAt(safeSources, i), valueAt(safeTargets, i)));
+        }
+        return entries;
+    }
+
+    private String valueAt(List<String> values, int index) {
+        return index < values.size() ? values.get(index) : null;
+    }
+
+    private String blankToNull(String value) {
+        return value != null && value.isBlank() ? null : value;
     }
 
     @PostMapping("/cards/{id}/delete")

@@ -14,6 +14,9 @@
         <a th:href="@{/web/cards}">← 목록으로</a>
     </div>
 
+    <div class="alert info" th:if="${message}" th:text="${message}"></div>
+    <div class="alert error" th:if="${error}" th:text="${error}"></div>
+
     <div class="card">
         <div class="row">
             <div>
@@ -106,6 +109,68 @@
             </ul>
         </div>
     </div>
+
+    <!-- 결과 수정: 작성자에게만, 처리가 끝난 카드에만 보인다 -->
+    <div class="card" th:if="${owned and card.status.name() == 'COMPLETED'}">
+        <h2>결과 수정</h2>
+        <p class="muted" style="margin-top: 0;">
+            AI가 만든 결과를 직접 고칠 수 있습니다. 전사/번역을 비워 두면 기존 내용이 그대로 남고,
+            요약은 여기 적힌 내용으로 통째로 바뀝니다. 항목의 두 칸을 모두 비우면 그 항목은 지워집니다.
+        </p>
+        <form method="post" th:action="@{/web/cards/{id}/result(id=${card.id})}"
+              data-confirm="결과를 이 내용으로 바꿀까요?">
+            <label for="transcript">전사 (STT)</label>
+            <textarea id="transcript" name="transcript" rows="5" th:text="${card.transcript}"></textarea>
+
+            <label for="translatedText">번역</label>
+            <textarea id="translatedText" name="translatedText" rows="5" th:text="${card.translatedText}"></textarea>
+
+            <h3 th:text="'핵심 내용 (' + ${card.targetLanguage} + ' / ' + ${card.sourceLanguage} + ')'"></h3>
+            <div class="entry-row" th:each="entry : ${card.summary != null ? card.summary.keyPoints : null}">
+                <input type="text" name="keyPointTarget" th:value="${entry.target}">
+                <input type="text" name="keyPointSource" th:value="${entry.source}">
+            </div>
+            <div class="entry-row">
+                <input type="text" name="keyPointTarget" placeholder="새 항목 (번역)">
+                <input type="text" name="keyPointSource" placeholder="새 항목 (원문)">
+            </div>
+
+            <h3 th:text="'할 일 (' + ${card.targetLanguage} + ' / ' + ${card.sourceLanguage} + ')'"></h3>
+            <div class="entry-row" th:each="entry : ${card.summary != null ? card.summary.actionItems : null}">
+                <input type="text" name="actionItemTarget" th:value="${entry.target}">
+                <input type="text" name="actionItemSource" th:value="${entry.source}">
+            </div>
+            <div class="entry-row">
+                <input type="text" name="actionItemTarget" placeholder="새 항목 (번역)">
+                <input type="text" name="actionItemSource" placeholder="새 항목 (원문)">
+            </div>
+
+            <h3 th:text="'이슈 (' + ${card.targetLanguage} + ' / ' + ${card.sourceLanguage} + ')'"></h3>
+            <div class="entry-row" th:each="entry : ${card.summary != null ? card.summary.blockers : null}">
+                <input type="text" name="blockerTarget" th:value="${entry.target}">
+                <input type="text" name="blockerSource" th:value="${entry.source}">
+            </div>
+            <div class="entry-row">
+                <input type="text" name="blockerTarget" placeholder="새 항목 (번역)">
+                <input type="text" name="blockerSource" placeholder="새 항목 (원문)">
+            </div>
+
+            <div class="actions">
+                <button type="submit">결과 저장</button>
+            </div>
+        </form>
+    </div>
 </div>
+
+<script>
+/* 팀 화면과 같은 방식의 확인 창. 문구는 th:on* 제약 때문에 data-confirm으로 넘긴다. */
+document.querySelectorAll('form[data-confirm]').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+        if (!window.confirm(form.dataset.confirm)) {
+            event.preventDefault();
+        }
+    });
+});
+</script>
 </body>
 </html>
