@@ -3,6 +3,7 @@ package com.handovercard.card;
 import com.handovercard.card.dto.HandoverCardCreatedResponse;
 import com.handovercard.card.dto.HandoverCardResponse;
 import com.handovercard.card.dto.HandoverCardUploadRequest;
+import com.handovercard.card.dto.UpdateHandoverResultRequest;
 import com.handovercard.common.PageResponse;
 import com.handovercard.pipeline.HandoverProcessingPipeline;
 import com.handovercard.security.CustomUserDetails;
@@ -22,8 +23,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -77,6 +80,17 @@ public class HandoverCardController {
         Page<HandoverCardResponse> cards = handoverCardService.listAccessible(principal.getMember(), pageable)
                 .map(handoverCardMapper::toResponse);
         return ResponseEntity.ok(PageResponse.from(cards));
+    }
+
+    @Operation(summary = "인수인계 결과 수정", description = "카드를 만든 작성자가 AI 결과(전사/번역/요약)를 직접 고칩니다. "
+            + "보내지 않은 항목은 그대로 둡니다. 작성자가 아니면 카드 존재를 숨기기 위해 404, "
+            + "아직 처리가 끝나지 않은(COMPLETED가 아닌) 카드면 409를 반환합니다.")
+    @PatchMapping("/{id}/result")
+    public ResponseEntity<HandoverCardResponse> updateResult(@PathVariable Long id,
+                                                               @Valid @RequestBody UpdateHandoverResultRequest request,
+                                                               @AuthenticationPrincipal CustomUserDetails principal) {
+        HandoverCard card = handoverCardService.updateResult(id, principal.getMember(), request);
+        return ResponseEntity.ok(handoverCardMapper.toResponse(card));
     }
 
     @Operation(summary = "인수인계 카드 삭제", description = "소유자만 삭제할 수 있습니다. 업로드된 오디오 파일도 함께 삭제됩니다.")

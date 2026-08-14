@@ -355,6 +355,104 @@ class TeamIntegrationTest {
                 .andExpect(status().isConflict());
     }
 
+    // ---------- 가입 신청 취소 ----------
+
+    @Test
+    void applicantCanCancelTheirOwnPendingRequest() throws Exception {
+        Session leader = signupAndLogin("cancel-leader");
+        Session applicant = signupAndLogin("cancel-applicant");
+        Long teamId = createTeam(leader, uniqueTeamName("cancel"));
+        apply(applicant, teamId);
+        Long requestId = firstPendingRequestId(leader);
+
+        mockMvc.perform(delete("/api/teams/my-join-requests/{id}", requestId)
+                        .header("Authorization", "Bearer " + applicant.accessToken()))
+                .andExpect(status().isNoContent());
+
+        // 취소는 기록을 남기지 않는다 — 신청자 이력과 팀장 대기 목록 양쪽에서 사라져야 한다
+        mockMvc.perform(get("/api/teams/my-join-requests")
+                        .header("Authorization", "Bearer " + applicant.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+        mockMvc.perform(get("/api/teams/me/join-requests").header("Authorization", "Bearer " + leader.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void cancellingFreesTheApplicantToApplyElsewhere() throws Exception {
+        Session leaderA = signupAndLogin("cancel-move-a");
+        Session leaderB = signupAndLogin("cancel-move-b");
+        Session applicant = signupAndLogin("cancel-move-applicant");
+        Long teamA = createTeam(leaderA, uniqueTeamName("cancel-move-a"));
+        Long teamB = createTeam(leaderB, uniqueTeamName("cancel-move-b"));
+        apply(applicant, teamA);
+
+        mockMvc.perform(delete("/api/teams/my-join-requests/{id}", firstPendingRequestId(leaderA))
+                        .header("Authorization", "Bearer " + applicant.accessToken()))
+                .andExpect(status().isNoContent());
+
+        // 대기 표시가 지워졌으므로 유니크 제약에 걸리지 않고 바로 다른 팀에 신청할 수 있다
+        apply(applicant, teamB);
+    }
+
+    @Test
+    void othersCannotCancelSomeoneElsesRequest() throws Exception {
+        Session leader = signupAndLogin("cancel-guard-leader");
+        Session applicant = signupAndLogin("cancel-guard-applicant");
+        Session outsider = signupAndLogin("cancel-guard-outsider");
+        Long teamId = createTeam(leader, uniqueTeamName("cancel-guard"));
+        apply(applicant, teamId);
+        Long requestId = firstPendingRequestId(leader);
+
+        // 팀장이라도 남의 신청을 대신 취소할 수는 없다 (거절이 있다). 존재를 숨기려 403이 아닌 404다.
+        mockMvc.perform(delete("/api/teams/my-join-requests/{id}", requestId)
+                        .header("Authorization", "Bearer " + leader.accessToken()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/teams/my-join-requests/{id}", requestId)
+                        .header("Authorization", "Bearer " + outsider.accessToken()))
+                .andExpect(status().isNotFound());
+
+        // 신청은 그대로 대기 상태로 남아야 한다
+        mockMvc.perform(get("/api/teams/me/join-requests").header("Authorization", "Bearer " + leader.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status").value("PENDING"));
+    }
+
+    @Test
+    void alreadyProcessedRequestCannotBeCancelled() throws Exception {
+        Session leader = signupAndLogin("cancel-late-leader");
+        Session applicant = signupAndLogin("cancel-late-applicant");
+        Long teamId = createTeam(leader, uniqueTeamName("cancel-late"));
+        apply(applicant, teamId);
+        Long requestId = firstPendingRequestId(leader);
+
+        mockMvc.perform(post("/api/teams/join-requests/{id}/reject", requestId)
+                        .header("Authorization", "Bearer " + leader.accessToken()))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(delete("/api/teams/my-join-requests/{id}", requestId)
+                        .header("Authorization", "Bearer " + applicant.accessToken()))
+                .andExpect(status().isConflict());
+
+        // 거절 이력은 그대로 남아 있어야 한다
+        mockMvc.perform(get("/api/teams/my-join-requests")
+                        .header("Authorization", "Bearer " + applicant.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status").value("REJECTED"));
+    }
+
+    @Test
+    void cancellingAnUnknownRequestIs404() throws Exception {
+        Session applicant = signupAndLogin("cancel-missing");
+
+        mockMvc.perform(delete("/api/teams/my-join-requests/{id}", 999_999L)
+                        .header("Authorization", "Bearer " + applicant.accessToken()))
+                .andExpect(status().isNotFound());
+    }
+
     @Test
     void plainMemberCannotListJoinRequests() throws Exception {
         Session leader = signupAndLogin("list-leader");

@@ -50,6 +50,14 @@ public class TeamWebController {
         return "redirect:/web/teams";
     }
 
+    @PostMapping("/requests/{requestId}/cancel")
+    public String cancel(@PathVariable Long requestId, @AuthenticationPrincipal CustomUserDetails principal,
+                          RedirectAttributes redirectAttributes) {
+        teamService.cancelMyRequest(requestId, principal.getMember().getId());
+        redirectAttributes.addFlashAttribute("message", "가입 신청을 취소했습니다. 다른 팀에 다시 신청할 수 있습니다.");
+        return "redirect:/web/teams";
+    }
+
     @PostMapping("/requests/{requestId}/approve")
     public String approve(@PathVariable Long requestId, @AuthenticationPrincipal CustomUserDetails principal,
                            RedirectAttributes redirectAttributes) {
