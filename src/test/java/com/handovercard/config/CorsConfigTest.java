@@ -17,7 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @TestPropertySource(properties =
-        "handover.web.cors.allowed-origins=http://localhost:[*],https://www.handover-card.o-r.kr")
+        "handover.web.cors.allowed-origins=http://localhost:[*],https://handover-card.vercel.app")
 class CorsConfigTest {
 
     private static final String ORIGIN = "http://localhost:5173";
@@ -65,14 +65,34 @@ class CorsConfigTest {
         }
     }
 
+    /** 배포된 프론트 주소(현재 Vercel). 가비아로 옮길 때 이 값도 함께 바꾼다. */
     @Test
     void 정확한_주소도_그대로_동작한다() throws Exception {
-        String origin = "https://www.handover-card.o-r.kr";
+        String origin = "https://handover-card.vercel.app";
         mockMvc.perform(options("/api/handover-cards")
                         .header(HttpHeaders.ORIGIN, origin)
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, origin));
+    }
+
+    /**
+     * vercel.app은 누구나 프로젝트를 만들 수 있는 공용 도메인이다. 정확한 주소로 넣은 것이
+     * 이름이 비슷한 다른 프로젝트나 미리보기 주소까지 열어 주지 않는지 경계를 고정한다.
+     */
+    @Test
+    void 이름이_비슷한_다른_vercel_주소는_거부된다() throws Exception {
+        String[] origins = {
+                "https://handover-card-preview.vercel.app",   // 브랜치 미리보기
+                "https://handover-card.vercel.app.evil.com",  // 접미사만 흉내 낸 주소
+                "http://handover-card.vercel.app"             // 스킴이 다르다
+        };
+        for (String origin : origins) {
+            mockMvc.perform(options("/api/handover-cards")
+                            .header(HttpHeaders.ORIGIN, origin)
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+                    .andExpect(status().isForbidden());
+        }
     }
 
     @Test
