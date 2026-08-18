@@ -56,7 +56,8 @@ handover:
       region: ${S3_REGION:us-east-1}
       # 운영(실제 AWS)에서는 비워 두면 기본 엔드포인트를 쓴다
       endpoint: ${S3_ENDPOINT:http://localhost:9000}
-      # 운영에서는 비워 두고 인스턴스 역할 등 SDK 기본 자격증명 체인을 쓴다
+      # 로컬 기본값은 MinIO 계정이다. 운영은 IAM 사용자 액세스 키를 환경변수로 넣는다
+      # (서버가 AWS 밖이라 인스턴스 역할을 쓸 수 없다 — application-prod.yml 참고)
       access-key: ${S3_ACCESS_KEY:handover}
       secret-key: ${S3_SECRET_KEY:handover-secret}
       path-style-access: ${S3_PATH_STYLE:true}
@@ -64,8 +65,8 @@ handover:
     cors:
       # 브라우저에서 API를 직접 부르는 프론트엔드 주소. 쉼표로 구분한다.
       # 정확한 주소와 패턴을 모두 받는다. 개발 서버는 포트가 자주 바뀌므로 [*]가 편하다.
-      # 예: CORS_ALLOWED_ORIGINS=http://localhost:[*],https://www.handover-card.o-r.kr
-      # 비워 두면 CORS 헤더를 붙이지 않는다(화면과 API가 같은 서버일 때는 필요 없다).
+      # 예: CORS_ALLOWED_ORIGINS=http://localhost:[*]
+      # 비워 두면 CORS 헤더를 붙이지 않는다. 운영은 프론트와 API가 한 도메인이라 비워 둔다.
       allowed-origins: ${CORS_ALLOWED_ORIGINS:}
     cookie:
       # 로컬 개발은 HTTP라 꺼 둔다. 켜면 브라우저가 쿠키를 보내지 않아 로그인이 되지 않는다.

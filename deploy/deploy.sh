@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# EC2에서 실행하는 배포 스크립트. 저장소를 클론해 둔 디렉터리에서 돌린다.
+# 서버에서 실행하는 백엔드 배포 스크립트. 저장소를 클론해 둔 디렉터리에서 돌린다.
+# 프론트엔드 배포는 deploy/deploy-web.sh 를 쓴다.
 #
 #   ./deploy/deploy.sh
 #
@@ -8,7 +9,7 @@
 
 set -euo pipefail
 
-# 기본값은 EC2 기준이고, 리허설할 때만 환경변수로 덮어쓴다.
+# 기본값은 운영 서버 기준이고, 리허설할 때만 환경변수로 덮어쓴다.
 IMAGE=${IMAGE:-handover-card}
 CONTAINER=${CONTAINER:-handover-card}
 ENV_FILE=${ENV_FILE:-/etc/handover-card.env}
