@@ -289,13 +289,24 @@ curl -s localhost:8080/actuator/health     # {"status":"UP"} 확인
 
 ## 7. nginx + HTTPS
 
-`/etc/nginx/snippets/`는 데비안 계열의 관례라 Rocky에는 없다. 직접 만든다. 프록시 설정은 여러
-경로에서 공유하므로 이 파일을 빠뜨리면 `nginx -t`가 `include` 대상을 찾지 못해 실패한다.
+설정이 세 파일로 나뉘어 있다. 나눈 이유는 **certbot이 `conf.d/handover-card.conf`를 직접 고치기
+때문**이다. 인증서를 받고 나면 그 파일에 `listen 443 ssl`과 인증서 경로가 들어가는데, 저장소
+버전으로 덮어쓰면 그게 사라져 HTTPS가 통째로 없어진다.
+
+| 파일 | 놓는 곳 | 갱신 |
+| --- | --- | --- |
+| `handover-card.conf` | `/etc/nginx/conf.d/` | **최초 1회만.** 이후 덮어쓰지 않는다 |
+| `handover-card-locations.conf` | `/etc/nginx/snippets/` | 경로 규칙이 바뀔 때마다 덮어쓴다 |
+| `handover-card-proxy.conf` | `/etc/nginx/snippets/` | 프록시 설정이 바뀔 때마다 덮어쓴다 |
+
+`/etc/nginx/snippets/`는 데비안 계열의 관례라 Rocky에는 없다. 직접 만든다. snippet을 빠뜨리면
+`nginx -t`가 `include` 대상을 찾지 못해 실패한다.
 
 ```bash
 sudo mkdir -p /etc/nginx/snippets
 sudo cp deploy/nginx/handover-card-proxy.conf /etc/nginx/snippets/
-sudo cp deploy/nginx/handover-card.conf /etc/nginx/conf.d/
+sudo cp deploy/nginx/handover-card-locations.conf /etc/nginx/snippets/
+sudo cp deploy/nginx/handover-card.conf /etc/nginx/conf.d/      # 최초 1회만
 
 sudo nginx -t && sudo systemctl enable --now nginx
 ```
@@ -327,6 +338,19 @@ HTTPS는 선택이 아니다. 브라우저 녹음(`getUserMedia`)과 `Secure` �
 ```bash
 systemctl list-timers | grep certbot
 sudo certbot renew --dry-run
+```
+
+### 실수로 conf.d/handover-card.conf 를 덮어썼다면
+
+증상은 "사이트가 갑자기 안 열림"이다. 인증서 자체는 남아 있으므로 **재발급이 아니라 재설치**로
+복구한다.
+
+```bash
+sudo nginx -T | grep -c "listen 443"     # 0이면 이 경우가 맞다
+
+sudo certbot install --nginx --cert-name handover-card.o-r.kr
+sudo nginx -t && sudo systemctl reload nginx
+curl -I https://handover-card.o-r.kr
 ```
 
 ## 8. 프론트엔드 배포
@@ -403,7 +427,14 @@ cd ~/Handover_Card && git pull && ./deploy/deploy.sh
 
 # 프론트
 ./deploy/deploy-web.sh ~/web-dist
+
+# nginx 경로 규칙이 바뀌었을 때 (snippets 만 복사한다)
+sudo cp deploy/nginx/handover-card-locations.conf deploy/nginx/handover-card-proxy.conf /etc/nginx/snippets/
+sudo nginx -t && sudo systemctl reload nginx
 ```
+
+**`/etc/nginx/conf.d/handover-card.conf` 는 다시 복사하지 않는다.** certbot이 넣어 둔 HTTPS
+설정이 그 파일에 있다(7절).
 
 백엔드는 헬스체크가 통과하지 못하면 직전 이미지로 자동 롤백한다. 다만 롤백은 **잘못된 코드**를
 되돌릴 뿐이고, 환경변수 파일은 그대로 쓰기 때문에 **설정 오류는 롤백해도 낫지 않는다.** 그때는
@@ -424,6 +455,7 @@ sudo tail -f /var/log/nginx/error.log
 | 프론트 화면만 403 (API는 정상) | 정적 파일 라벨이 틀림 | `sudo restorecon -Rv /var/www` |
 | `nginx -t`에서 `include ... failed` | snippets 파일 미복사 | 7절의 `handover-card-proxy.conf` 복사 |
 | 도메인으로 들어가면 Rocky 기본 페이지 | nginx.conf의 default_server 블록 | 7절대로 주석 처리 |
+| 잘 되던 사이트가 `git pull` 후 안 열림 | `conf.d/handover-card.conf`를 덮어써 HTTPS 설정이 날아감 | `sudo certbot install --nginx --cert-name handover-card.o-r.kr` |
 | `docker` 명령이 `permission denied` | docker 그룹 반영 안 됨 | 로그아웃 후 재접속 |
 | 이미지 빌드가 `UnknownHostException` | 컨테이너가 바깥으로 못 나감 | 1-2절 "컨테이너가 바깥으로 못 나갈 때" |
 | 기동 시 `Unable to determine Dialect without JDBC metadata` | DB에 못 붙음 (커넥션을 못 얻어 DB 종류조차 모름) | 5절. 스택트레이스 꼬리가 아니라 **앞부분**을 봐야 진짜 원인이 나온다 |
