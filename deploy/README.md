@@ -370,14 +370,30 @@ API 기준 주소를 **빈 값(상대 경로)** 으로 둔다. 경로가 이미 
 Google Cloud Console / GitHub Developer Settings에 등록한다. 도메인이 바뀌었으므로 **새 주소를
 추가하지 않으면 소셜 로그인만 `redirect_uri_mismatch`로 실패한다.**
 
-```
-https://handover-card.o-r.kr/login/oauth2/code/google      ← 브라우저 흐름(/web 화면)
-https://handover-card.o-r.kr/login/oauth2/code/github
-https://handover-card.o-r.kr/oauth2/callback               ← 프론트가 직접 인가 요청을 만드는 경우
-```
+흐름이 둘이라 콜백 주소도 둘이다. 둘은 서로 다른 경로이고 처리 주체도 다르다.
 
-세 번째 값은 프론트가 실제로 쓰는 콜백 경로에 맞춘다. 프론트가 보내는 `redirectUri`와 콘솔에
-등록한 값이 **글자 하나까지 같아야** 한다.
+| 흐름 | 콜백 주소 | 누가 받나 |
+| --- | --- | --- |
+| 서버(Thymeleaf `/web` 화면) | `https://handover-card.o-r.kr/login/oauth2/code/{google\|github}` | 백엔드 |
+| 프론트(SPA) | `https://handover-card.o-r.kr/oauth2/callback/{google\|github}` | **SPA** |
+
+프론트 콜백은 브라우저가 그 주소로 **돌아오는** 것이고, 쿼리스트링의 `code`를 읽어
+`POST /api/auth/oauth2/{provider}`로 넘기는 일은 SPA가 한다. 그래서 이 경로는 백엔드로
+프록시하면 안 된다 — nginx에서 `/oauth2/` 전체가 아니라 `/oauth2/authorization/` 만 넘기는
+이유가 이것이다.
+
+`redirectUri`는 서버가 검증하지 않고 공급자에게 그대로 전달하므로(`OAuth2CodeExchangeService`)
+**프론트가 보내는 값과 공급자 콘솔에 등록한 값이 글자 하나까지 같으면** 백엔드는 손댈 것이 없다.
+
+> **GitHub은 콜백 URL을 하나만 등록할 수 있다.** Google은 여러 개를 정확히 나열할 수 있지만,
+> GitHub OAuth App에는 "Authorization callback URL" 칸이 하나뿐이고 등록한 경로의 하위 경로만
+> 허용된다. 즉 위 두 주소를 동시에 쓸 수 없다.
+>
+> 프론트를 쓸 것이므로 GitHub에는 `https://handover-card.o-r.kr/oauth2/callback/github`를
+> 등록한다. 그 대신 **`/web` 화면의 GitHub 로그인 버튼은 동작하지 않게 된다**(Google은 양쪽 다
+> 등록되므로 그대로 된다). `/web`은 백엔드 확인용 화면이라 감수할 만한 손실이다.
+>
+> 둘 다 살리려면 GitHub OAuth App을 하나 더 만들어 `GITHUB_CLIENT_ID`를 나누는 방법밖에 없다.
 
 ## 10. 이후 배포
 
