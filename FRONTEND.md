@@ -91,7 +91,15 @@ POST /api/auth/oauth2/{provider}         { code, redirectUri } → 로그인과 
 `redirectUri`는 **인가 코드를 받을 때 쓴 값과 완전히 같아야** 합니다. `state` 검증은 인가 요청을
 만든 프론트가 직접 해야 합니다 — 서버는 그 코드가 어느 요청에서 왔는지 알 수 없습니다.
 
-사용할 리다이렉트 URI가 정해지면 백엔드 담당자에게 알려주세요. 공급자 콘솔에 등록이 필요합니다.
+콜백 경로는 `https://handover-card.o-r.kr/oauth2/callback/{google|github}` 로 맞춰 두었습니다.
+이 경로는 **프론트가 받는 화면**이므로 SPA 라우팅으로 처리하시면 됩니다(서버로 넘어가지 않도록
+nginx에서 `/oauth2/authorization/` 만 백엔드로 보냅니다). 돌아온 `code`를 위의
+`POST /api/auth/oauth2/{provider}` 로 넘기시면 토큰이 나옵니다.
+
+다른 경로를 쓰시려면 공급자 콘솔 재등록이 필요하니 미리 알려주세요.
+
+> GitHub은 콜백 URL을 하나만 등록할 수 있어서 위 주소로 등록했습니다. 그래서 백엔드 확인용
+> 화면(`/web`)의 GitHub 로그인은 동작하지 않습니다. 프론트 흐름에는 영향이 없습니다.
 
 ## 3. 인계 카드
 
