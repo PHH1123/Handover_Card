@@ -26,7 +26,33 @@ Java 프로세스를 상주시킬 수 없어 이 구성이 성립하지 않는�
 - OS: **Rocky Linux 8.10** 기준. 아래 명령은 `dnf`·`firewalld`·SELinux를 전제로 한다
 - 공인 IP 고정 — 도메인 A레코드가 물릴 주소이자 RDS 화이트리스트에 등록할 주소다
 
-### 1-1. 패키지 설치
+### 1-1. 방화벽 (firewalld) — 도커보다 먼저
+
+**순서가 중요하다.** Rocky의 firewalld는 nftables 기반인데 Docker는 자기 규칙을 iptables로
+심는다. 도커가 뜬 뒤에 `firewall-cmd --reload`를 하면 그 규칙이 통째로 날아가 **컨테이너가
+바깥으로 나가지 못하게 된다.** 그래서 방화벽을 먼저 잡고 도커를 설치한다.
+
+가비아는 **콘솔의 방화벽과 서버 안의 방화벽이 별개**다. 둘 다 열려 있어야 접속된다.
+22(내 IP만), 80, 443만 연다. **8080은 열지 않는다** — nginx가 루프백으로 프록시하므로
+외부에서 직접 닿을 이유가 없다.
+
+```bash
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --reload
+sudo firewall-cmd --list-all
+```
+
+> `--permanent` 없이 실행한 규칙은 재부팅하면 사라진다. 반대로 `--permanent`만 주고 `--reload`를
+> 하지 않으면 지금 세션에는 적용되지 않는다. 위처럼 둘 다 해야 한다.
+
+**나중에 방화벽 규칙을 바꿀 일이 생기면 `--reload` 뒤에 반드시 도커를 재시작한다.**
+
+```bash
+sudo firewall-cmd --reload && sudo systemctl restart docker
+```
+
+### 1-2. 패키지 설치
 
 Rocky 8에는 `docker` 패키지가 없다. 기본으로 들어 있는 podman과 충돌하므로 그것부터 걷어내고
 Docker 공식 저장소를 추가한다.
@@ -50,21 +76,41 @@ sudo usermod -aG docker $USER    # 다시 로그인해야 적용된다
 
 `bind-utils`는 `dig`를 쓰기 위한 것이다. 최소 설치 이미지에는 들어 있지 않다.
 
-### 1-2. 방화벽 (firewalld)
-
-가비아는 **콘솔의 방화벽과 서버 안의 방화벽이 별개**다. 둘 다 열려 있어야 접속된다.
-22(내 IP만), 80, 443만 연다. **8080은 열지 않는다** — nginx가 루프백으로 프록시하므로
-외부에서 직접 닿을 이유가 없다.
+설치 직후 **컨테이너가 바깥으로 나갈 수 있는지 먼저 확인한다.** 이게 막혀 있으면 나중에
+이미지 빌드가 `UnknownHostException: services.gradle.org`로 죽는데, 로그만 봐서는 Gradle
+문제처럼 보여서 엉뚱한 곳을 뒤지게 된다.
 
 ```bash
-sudo firewall-cmd --permanent --add-service=http
-sudo firewall-cmd --permanent --add-service=https
-sudo firewall-cmd --reload
-sudo firewall-cmd --list-all
+docker run --rm alpine ping -c1 1.1.1.1                # 네트워크
+docker run --rm alpine nslookup services.gradle.org    # DNS
 ```
 
-> `--permanent` 없이 실행한 규칙은 재부팅하면 사라진다. 반대로 `--permanent`만 주고 `--reload`를
-> 하지 않으면 지금 세션에는 적용되지 않는다. 위처럼 둘 다 해야 한다.
+둘 다 성공해야 다음으로 넘어간다. 실패하면 아래 "컨테이너가 바깥으로 못 나갈 때"를 본다.
+
+#### 컨테이너가 바깥으로 못 나갈 때
+
+호스트는 멀쩡한데(이미지 pull은 되는데) 컨테이너 안에서만 실패하는 게 특징이다.
+`ping`과 `nslookup` 중 어느 쪽이 실패하느냐로 원인이 갈린다.
+
+**`ping`부터 실패** — firewalld가 도커 규칙을 지웠다. 위 1-1의 순서를 지키지 않았을 때 그렇다.
+
+```bash
+sudo systemctl restart docker
+```
+
+**`ping`은 되고 `nslookup`만 실패** — 컨테이너가 쓰는 DNS가 막혔다. 호스트
+`/etc/resolv.conf`가 `127.0.0.53`(systemd-resolved 스텁)을 가리키면 도커는 그 주소를 컨테이너에
+넘길 수 없어 `8.8.8.8`로 대체하는데, 외부 DNS로 나가는 경로가 막혀 있으면 컨테이너만 이름
+해석에 실패한다. 실제 리졸버를 도커에 직접 알려준다.
+
+```bash
+resolvectl status | grep 'DNS Server'      # 가비아가 준 DNS 주소 확인
+
+sudo tee /etc/docker/daemon.json <<'EOF'
+{ "dns": ["확인한_DNS_IP", "168.126.63.1"] }
+EOF
+sudo systemctl restart docker
+```
 
 ### 1-3. SELinux — 이 구성에서 반드시 건드려야 한다
 
@@ -184,9 +230,33 @@ docker run --rm --env-file /etc/handover-card.env amazon/aws-cli \
 
 ## 5. DB 준비 (AWS RDS)
 
-서버가 AWS 밖에 있으므로 RDS에 **퍼블릭 액세스**를 켜고, 보안 그룹 인바운드에 **이 서버의 공인
-IP 한 개만** 3306으로 허용한다. `0.0.0.0/0`으로 열지 않는다 — 인터넷 전체에 MySQL 포트를 여는
-것이고, 실제로 자동 스캐너가 곧바로 붙는다.
+서버가 AWS 밖에 있으므로 RDS를 밖에서 접속할 수 있게 만들어야 하는데, **세 가지가 모두 맞아야
+한다.** 하나라도 빠지면 증상이 똑같이 "10초 타임아웃"으로 나와서 어느 것이 문제인지 구분되지
+않는다.
+
+1. **퍼블릭 액세스 = 예** — 엔드포인트가 공인 IP로 해석되게 한다
+2. **보안 그룹 인바운드** — 3306, 소스는 **이 서버의 공인 IP `/32`** 하나만.
+   `0.0.0.0/0`으로 열지 않는다. 인터넷 전체에 MySQL 포트를 여는 것이고 자동 스캐너가 곧바로 붙는다
+3. **서브넷 라우팅** — RDS가 앉은 서브넷의 라우팅 테이블에 `0.0.0.0/0 → igw-...` 가 있어야 한다
+
+3번이 가장 놓치기 쉽다. **서브넷 그룹에는 AZ별로 서브넷이 여러 개 들어 있는데 인스턴스는 그중
+하나에만 있고, 서브넷마다 라우팅 테이블이 다를 수 있다.** RDS 상세의 **가용 영역**을 먼저 확인하고
+그 AZ의 서브넷만 봐야 한다. 다른 서브넷의 라우팅 테이블을 보고 "IGW 있음"이라고 판단하기 쉽다.
+
+확인 순서:
+
+```bash
+curl -s ifconfig.me                                    # 보안 그룹에 넣을 IP
+dig +short <rds-endpoint>                              # 공인 IP로 풀려야 한다
+time timeout 10 bash -c '</dev/tcp/<rds-endpoint>/3306'   # 열렸는지
+```
+
+마지막 명령이 **10초를 꽉 채우고 실패하면** 패킷이 조용히 버려지는 것이다(보안 그룹·NACL·라우팅).
+즉시 `Connection refused`면 도달은 했다는 뜻이라 다른 문제다.
+
+어디서 막혔는지 확실히 알고 싶으면 VPC 콘솔의 **Reachability Analyzer**를 쓴다. 소스를 인터넷
+게이트웨이, 대상을 RDS의 네트워크 인터페이스, 포트 3306으로 두고 돌리면 **차단한 구성 요소를
+이름으로 찍어 준다.** 콘솔을 헤매는 것보다 빠르다.
 
 `DB_URL`의 `useSSL=true`를 유지할 것. 연결이 공인망을 지나가므로 이게 없으면 쿼리와 자격증명이
 평문으로 오간다.
@@ -339,6 +409,8 @@ sudo tail -f /var/log/nginx/error.log
 | `nginx -t`에서 `include ... failed` | snippets 파일 미복사 | 7절의 `handover-card-proxy.conf` 복사 |
 | 도메인으로 들어가면 Rocky 기본 페이지 | nginx.conf의 default_server 블록 | 7절대로 주석 처리 |
 | `docker` 명령이 `permission denied` | docker 그룹 반영 안 됨 | 로그아웃 후 재접속 |
+| 이미지 빌드가 `UnknownHostException` | 컨테이너가 바깥으로 못 나감 | 1-2절 "컨테이너가 바깥으로 못 나갈 때" |
+| 기동 시 `Unable to determine Dialect without JDBC metadata` | DB에 못 붙음 (커넥션을 못 얻어 DB 종류조차 모름) | 5절. 스택트레이스 꼬리가 아니라 **앞부분**을 봐야 진짜 원인이 나온다 |
 
 `ausearch`에 아무것도 안 나오면 SELinux 문제가 아니다. 그때는 방화벽(`firewall-cmd --list-all`)과
 가비아 콘솔 방화벽을 확인한다 — 둘 다 열려 있어야 한다.
