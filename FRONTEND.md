@@ -3,48 +3,61 @@
 이 서비스의 API를 브라우저에서 호출해 화면을 만들 때 필요한 내용입니다.
 전체 엔드포인트 명세는 Swagger에 있으니, 이 문서는 **명세만 봐서는 알기 어려운 것들**을 다룹니다.
 
-- **Swagger UI**: https://api.handover-card.o-r.kr/swagger-ui/index.html
-- **OpenAPI 스펙(JSON)**: https://api.handover-card.o-r.kr/v3/api-docs — 타입이나 클라이언트 코드 생성에 쓸 수 있습니다
-- **API 기준 주소**: `https://api.handover-card.o-r.kr`
+- **Swagger UI**: `https://handover-card.o-r.kr/swagger-ui/index.html`
+- **OpenAPI 스펙(JSON)**: `https://handover-card.o-r.kr/v3/api-docs` — 타입이나 클라이언트 코드 생성에 쓸 수 있습니다
+- **API 기준 주소**: 없음 — **상대 경로로 호출하세요** (아래)
 
-## 1. CORS
+## 1. 주소와 CORS
 
-서버가 허용한 출처에서만 브라우저가 API 응답을 받을 수 있습니다.
+**프론트와 API가 한 도메인에서 서비스됩니다.** 정적 파일과 API가 같은 서버의 nginx를 거치며,
+경로로 나뉩니다.
 
-**로컬 개발은 `http://localhost`의 어떤 포트든 열려 있습니다.** Vite(5173)든 Next(3000)든, 포트가
-밀려 5174가 되든 그대로 동작하므로 미리 알려주지 않으셔도 됩니다.
+```
+https://handover-card.o-r.kr/            → 프론트 (여러분이 빌드한 정적 파일)
+https://handover-card.o-r.kr/api/**      → API
+https://handover-card.o-r.kr/oauth2/**   → 소셜 로그인 흐름
+```
 
-**배포된 프론트는 `https://handover-card.vercel.app` 이 열려 있습니다.**
+그래서 **API 기준 주소를 빈 값으로 두고 상대 경로로 호출하시면 됩니다.**
 
-다만 열려 있는 건 **포트뿐**입니다. 아래는 각각 다른 출처라 따로 요청하셔야 합니다.
+```
+VITE_API_BASE_URL=
+```
 
-- `http://127.0.0.1:5173` — `localhost`와 다른 호스트로 취급됩니다
-- `https://localhost:5173` — 스킴이 다릅니다
-- **Vercel의 브랜치 미리보기 주소**(`https://handover-card-<브랜치>-<계정>.vercel.app`) — 배포 주소와 다른 출처입니다.
-  `*.vercel.app`을 통째로 열면 남이 비슷한 이름의 프로젝트를 만들어 그대로 통과하므로 패턴으로 열지 않습니다.
-  미리보기에서 API를 호출해야 하면 그 주소를 알려주세요
+```js
+fetch("/api/handover-cards", { headers: { Authorization: `Bearer ${token}` } })
+```
 
-> 프론트를 가비아 도메인으로 옮기면 그 주소로 교체합니다. 옮기기 전에 미리 알려주시면 두 주소를
-> 함께 열어 두고 전환할 수 있습니다.
+### CORS는 신경 쓰지 않으셔도 됩니다
 
-허용되지 않은 출처에서 호출하면 사전 요청(preflight)이 403으로 막힙니다. 브라우저 콘솔에
-`No 'Access-Control-Allow-Origin' header` 가 뜨면 이 경우입니다.
+같은 출처라 브라우저가 교차 출처 요청으로 보지 않고, 서버도 CORS 헤더를 붙이지 않습니다.
+사전 요청(preflight)도 발생하지 않습니다. 배포 주소가 바뀔 때마다 백엔드에 허용 목록 추가를
+요청하던 절차가 없어집니다.
 
-> Vite 프록시(`server.proxy`)를 쓰셔도 됩니다. 그 경우 브라우저는 개발 서버하고만 통신하므로
-> CORS 자체가 발생하지 않습니다. 어느 쪽이든 서버는 지원합니다.
+**로컬 개발에서는 Vite 프록시를 쓰세요.** 코드를 그대로 두고 개발 서버가 API를 대신 호출해 주므로,
+로컬과 운영에서 같은 상대 경로가 동작합니다.
+
+```js
+// vite.config.js
+server: {
+  proxy: {
+    "/api": { target: "https://handover-card.o-r.kr", changeOrigin: true },
+  },
+}
+```
+
+로컬에서 프록시 없이 운영 API를 직접 부르면 그때는 교차 출처가 되어 막힙니다. 꼭 그렇게 하셔야
+하면 개발 서버 주소를 알려주세요 — 서버 허용 목록에 그 주소만 추가합니다.
 
 ## 2. 인증
 
-### 개발 중에는 Bearer 토큰을 쓰세요
+### Bearer 토큰을 쓰세요
 
-이 서버는 **`Authorization` 헤더와 쿠키를 둘 다** 받습니다. 다만 지금 구성에서는 헤더를 쓰셔야
-합니다. `localhost`도 `handover-card.vercel.app`도 API(`handover-card.o-r.kr`)와 상위 도메인이
-달라 브라우저가 cross-site로 보고, 인증 쿠키(`SameSite=Lax`)를 아예 전송하지 않기 때문입니다.
-**CORS를 열어도 이건 해결되지 않습니다** — 서로 다른 문제입니다.
+이 서버는 **`Authorization` 헤더와 쿠키를 둘 다** 받습니다. 프론트에서는 헤더를 쓰시면 됩니다.
 
-프론트가 API와 같은 상위 도메인(가비아 도메인의 `www.` 등)으로 옮겨 가면 쿠키 방식으로 전환할 수
-있습니다. 그때는 서버에서 쿠키 `Domain` 속성을 조정합니다. Vercel에 있는 동안에는 계속 Bearer
-토큰을 쓰시고, 토큰은 메모리나 스토리지에 직접 보관하세요.
+같은 도메인이 되었으므로 쿠키 인증도 기술적으로는 가능해졌지만, 지금은 전환하지 않습니다.
+서버 이전과 인증 방식 변경을 동시에 하면 문제가 생겼을 때 원인을 가리기 어렵기 때문입니다.
+토큰은 메모리나 스토리지에 직접 보관하세요.
 
 ### 흐름
 
@@ -172,6 +185,9 @@ DELETE /api/handover-cards/{id}             → 삭제
 
 ## 막히면
 
-- CORS 오류 → 개발 서버 주소를 백엔드에 알려주고 허용 목록에 추가 요청
+- CORS 오류 → 상대 경로 대신 절대 주소로 부르고 있지 않은지 확인하세요. 같은 도메인이면 CORS가
+  뜰 이유가 없습니다. 로컬에서 운영 API를 직접 부르는 경우라면 Vite 프록시를 쓰거나 개발 서버
+  주소를 백엔드에 알려주세요
+- 새로고침하면 404 → SPA 라우팅 경로입니다. 서버 설정 문제이니 백엔드에 알려주세요
 - 401이 계속 → 토큰 만료 여부, `Bearer ` 접두사 확인
 - 500 → 서버 로그를 봐야 하니 요청 시각과 내용을 백엔드에 전달
